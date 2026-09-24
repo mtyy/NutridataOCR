@@ -35,12 +35,16 @@ internal class NutritionFallback {
         lines: List<OcrLine>,
         timestampMillis: Long,
         labelled: Map<Nutrient, List<NutrientValue>>,
+        isPhoto: Boolean = false,
     ): NumericFallbackResult {
         if (timestampMillis <= resetAtMillis) return result(labelled)
         val frame = lines.flatMap { readNumbers(it.tokens) }.groupBy({ it.first }, { it.second })
         for ((number, confidences) in frame) {
             val previous = observations[number]
-            if (previous != null && timestampMillis - previous.lastSeenMillis < 300L) continue
+            if (previous != null && (
+                timestampMillis <= previous.lastSeenMillis ||
+                    (!isPhoto && timestampMillis - previous.lastSeenMillis < 300L)
+                )) continue
             observations[number] = NumberEvidence(
                 number = number,
                 samples = ((previous?.samples ?: 0) + 1).coerceAtMost(12),

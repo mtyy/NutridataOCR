@@ -20,16 +20,29 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.CameraState
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text as ComposeText
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -40,8 +53,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Observer
@@ -56,7 +73,7 @@ import kotlin.math.hypot
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CameraPreview(
-    onTextRecognized: (List<OcrLine>, Long) -> Unit,
+    onTextRecognized: (List<OcrLine>, Long, Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -70,6 +87,8 @@ internal fun CameraPreview(
     var rearCameras by remember { mutableStateOf(emptyList<RearCamera>()) }
     var selectedCameraId by rememberSaveable { mutableStateOf<String?>(null) }
     var cameraMenuExpanded by remember { mutableStateOf(false) }
+    var takePhoto by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var capturing by remember { mutableStateOf(false) }
     val physicalCameraId = rearCameras.firstOrNull { it.id == selectedCameraId }?.selector?.physicalCameraId
 
     DisposableEffect(previewView, lifecycleOwner, selectedCameraId, physicalCameraId) {
@@ -109,11 +128,28 @@ internal fun CameraPreview(
         val preview = previewBuilder.build().apply {
             surfaceProvider = previewView.surfaceProvider
         }
-        val analysisBuilder = ImageAnalysis.Builder()
-            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-            .setTargetRotation(rotation)
-        physicalCameraId?.let { Camera2Interop.Extender(analysisBuilder).setPhysicalCameraId(it) }
-        val analysis = analysisBuilder.build()
+        val analysis = run {
+            val builder = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .setTargetRotation(rotation)
+            physicalCameraId?.let { Camera2Interop.Extender(builder).setPhysicalCameraId(it) }
+            builder.build()
+        }
+        val imageCapture = run {
+            val builder = ImageCapture.Builder()
+                .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                .setFlashMode(ImageCapture.FLASH_MODE_OFF)
+                .setTargetRotation(rotation)
+                .setResolutionSelector(
+                    ResolutionSelector.Builder()
+                        .setAllowedResolutionMode(ResolutionSelector.PREFER_HIGHER_RESOLUTION_OVER_CAPTURE_RATE)
+                        .setResolutionStrategy(ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY)
+                        .build()
+                )
+            physicalCameraId?.let { Camera2Interop.Extender(builder).setPhysicalCameraId(it) }
+            builder.build()
+        }
+        val useCases = arrayOf(preview, analysis, imageCapture)
         var provider: ProcessCameraProvider? = null
         var boundCameraInfo: CameraInfo? = null
         val cameraStateObserver = Observer<CameraState> { state ->
@@ -123,27 +159,44 @@ internal fun CameraPreview(
         }
         var disposed = false
         var processing = false
+        var capturePending = false
+        var pendingPhotoCapture: (() -> Unit)? = null
 
-        analysis.setAnalyzer(mainExecutor) { frame ->
-            if (disposed || processing) {
-                frame.close()
-                return@setAnalyzer
+        fun finishProcessing(isPhoto: Boolean) {
+            processing = false
+            if (isPhoto) capturePending = false
+            if (disposed) {
+                recognizer.close()
+            } else {
+                if (isPhoto) capturing = false
+                val capture = pendingPhotoCapture
+                pendingPhotoCapture = null
+                capture?.invoke()
             }
+        }
+
+        fun showPhotoFailure() {
+            if (!disposed) {
+                Toast.makeText(context, R.string.photo_scan_failed, Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        fun processFrame(frame: ImageProxy, capturedAtMillis: Long, isPhoto: Boolean = false) {
             val image = frame.image
             if (image == null) {
                 frame.close()
-                return@setAnalyzer
+                finishProcessing(isPhoto)
+                if (isPhoto) showPhotoFailure()
+                return
             }
             processing = true
-            val capturedAtMillis = SystemClock.elapsedRealtime()
             try {
                 recognizer.process(InputImage.fromMediaImage(image, frame.imageInfo.rotationDegrees))
                     .addOnCompleteListener(mainExecutor) { task ->
                         frame.close()
-                        processing = false
-                        if (disposed) {
-                            recognizer.close()
-                        } else if (task.isSuccessful) {
+                        finishProcessing(isPhoto)
+                        if (disposed) return@addOnCompleteListener
+                        if (task.isSuccessful) {
                             val lines = task.result.textBlocks.flatMap { it.lines }.map { line ->
                                 val numbers = line.elements.filter { element ->
                                     element.text.any { it.isDigit() }
@@ -158,15 +211,32 @@ internal fun CameraPreview(
                                     tokens = line.elements.map { OcrToken(it.text, it.confidence) },
                                 )
                             }
-                            latestOnTextRecognized(lines, capturedAtMillis)
+                            latestOnTextRecognized(lines, capturedAtMillis, isPhoto)
+                            if (isPhoto) {
+                                Toast.makeText(
+                                    context,
+                                    if (lines.isEmpty()) R.string.photo_no_text else R.string.photo_scanned,
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
                         } else {
                             Log.e("CameraOcr", "Text recognition failed", task.exception)
+                            if (isPhoto) showPhotoFailure()
                         }
                     }
             } catch (exception: Exception) {
                 frame.close()
-                processing = false
+                finishProcessing(isPhoto)
                 Log.e("CameraOcr", "Could not process camera frame", exception)
+                if (isPhoto) showPhotoFailure()
+            }
+        }
+
+        analysis.setAnalyzer(mainExecutor) { frame ->
+            if (disposed || processing || capturePending) {
+                frame.close()
+            } else {
+                processFrame(frame, SystemClock.elapsedRealtime())
             }
         }
 
@@ -183,11 +253,45 @@ internal fun CameraPreview(
                     val camera = cameraProvider.bindToLifecycle(
                         lifecycleOwner,
                         selected?.selector ?: CameraSelector.DEFAULT_BACK_CAMERA,
-                        preview,
-                        analysis,
+                        *useCases,
                     )
                     boundCameraInfo = camera.cameraInfo
                     camera.cameraInfo.cameraState.observe(lifecycleOwner, cameraStateObserver)
+                    takePhoto = {
+                        if (!disposed && !capturePending) {
+                            capturePending = true
+                            capturing = true
+                            val capturedAtMillis = SystemClock.elapsedRealtime()
+                            val capture = {
+                                imageCapture.targetRotation = previewView.display?.rotation ?: rotation
+                                try {
+                                    imageCapture.takePicture(mainExecutor, object : ImageCapture.OnImageCapturedCallback() {
+                                        override fun onCaptureSuccess(image: ImageProxy) {
+                                            if (disposed) {
+                                                image.close()
+                                            } else {
+                                                Log.i("CameraOcr", "Photo: ${image.width}x${image.height}, rotation=${image.imageInfo.rotationDegrees}")
+                                                processFrame(image, capturedAtMillis, isPhoto = true)
+                                            }
+                                        }
+
+                                        override fun onError(exception: ImageCaptureException) {
+                                            capturePending = false
+                                            if (!disposed) capturing = false
+                                            Log.e("CameraOcr", "Could not capture photo", exception)
+                                            showPhotoFailure()
+                                        }
+                                    })
+                                } catch (exception: Exception) {
+                                    capturePending = false
+                                    capturing = false
+                                    Log.e("CameraOcr", "Could not start photo capture", exception)
+                                    showPhotoFailure()
+                                }
+                            }
+                            if (processing) pendingPhotoCapture = capture else capture()
+                        }
+                    }
                 } catch (exception: Exception) {
                     Log.e("CameraOcr", "Could not start rear camera $requestedCameraId", exception)
                     if (selectedCameraId != null) {
@@ -200,37 +304,64 @@ internal fun CameraPreview(
 
         onDispose {
             disposed = true
+            takePhoto = null
+            capturing = false
+            pendingPhotoCapture = null
             analysis.clearAnalyzer()
             boundCameraInfo?.cameraState?.removeObserver(cameraStateObserver)
-            provider?.unbind(preview, analysis)
+            provider?.unbind(*useCases)
             if (!processing) recognizer.close()
         }
     }
 
     Column(modifier) {
         AndroidView(factory = { previewView }, modifier = Modifier.fillMaxWidth().weight(1f))
-        if (rearCameras.size > 1) {
-            Box {
-                TextButton(onClick = { cameraMenuExpanded = true }) {
-                    ComposeText(
-                        rearCameras.firstOrNull { it.id == selectedCameraId }?.label
-                            ?: rearCameras.first().label
-                    )
-                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = cameraMenuExpanded)
-                }
-                DropdownMenu(
-                    expanded = cameraMenuExpanded,
-                    onDismissRequest = { cameraMenuExpanded = false },
-                ) {
-                    rearCameras.forEach { camera ->
-                        DropdownMenuItem(
-                            text = { ComposeText(camera.label) },
-                            onClick = {
-                                cameraMenuExpanded = false
-                                selectedCameraId = camera.id
-                            },
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (rearCameras.size > 1) {
+                Box(Modifier.weight(1f)) {
+                    TextButton(onClick = { cameraMenuExpanded = true }) {
+                        ComposeText(
+                            rearCameras.firstOrNull { it.id == selectedCameraId }?.label
+                                ?: rearCameras.first().label,
+                            modifier = Modifier.weight(1f, fill = false),
                         )
+                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = cameraMenuExpanded)
                     }
+                    DropdownMenu(
+                        expanded = cameraMenuExpanded,
+                        onDismissRequest = { cameraMenuExpanded = false },
+                    ) {
+                        rearCameras.forEach { camera ->
+                            DropdownMenuItem(
+                                text = { ComposeText(camera.label) },
+                                onClick = {
+                                    cameraMenuExpanded = false
+                                    selectedCameraId = camera.id
+                                },
+                            )
+                        }
+                    }
+                }
+            } else {
+                Spacer(Modifier.weight(1f))
+            }
+            FilledIconButton(
+                onClick = { takePhoto?.invoke() },
+                enabled = takePhoto != null && !capturing,
+                modifier = Modifier.size(56.dp),
+            ) {
+                if (capturing) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                } else {
+                    Icon(
+                        painter = painterResource(android.R.drawable.ic_menu_camera),
+                        contentDescription = stringResource(R.string.take_photo),
+                        modifier = Modifier.size(24.dp),
+                    )
                 }
             }
         }

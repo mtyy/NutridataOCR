@@ -25,7 +25,11 @@ internal class NutritionScan {
     val nutrients: Map<Nutrient, List<NutrientValue>>
         get() = selected.toSortedMap()
 
-    fun observe(lines: List<OcrLine>, timestampMillis: Long): Map<Nutrient, List<NutrientValue>> {
+    fun observe(
+        lines: List<OcrLine>,
+        timestampMillis: Long,
+        isPhoto: Boolean = false,
+    ): Map<Nutrient, List<NutrientValue>> {
         if (timestampMillis <= resetAtMillis) return nutrients
         val frameSamples = mutableMapOf<Nutrient, Sample>()
         for (line in lines) {
@@ -44,7 +48,10 @@ internal class NutritionScan {
         for ((nutrient, sample) in frameSamples) {
             val samples = history.getOrPut(nutrient) { ArrayDeque() }
             val previousTimestamp = samples.lastOrNull()?.timestampMillis
-            if (previousTimestamp != null && timestampMillis - previousTimestamp < SAMPLE_INTERVAL_MILLIS) {
+            if (previousTimestamp != null && (
+                timestampMillis <= previousTimestamp ||
+                    (!isPhoto && timestampMillis - previousTimestamp < SAMPLE_INTERVAL_MILLIS)
+                )) {
                 continue
             }
             samples.addLast(sample)

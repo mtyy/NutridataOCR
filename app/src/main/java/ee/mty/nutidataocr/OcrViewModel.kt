@@ -17,11 +17,11 @@ internal class OcrViewModel : ViewModel() {
     var numericFallback by mutableStateOf(NumericFallbackResult())
         private set
 
-    fun onTextRecognized(lines: List<OcrLine>, capturedAtMillis: Long) {
+    fun onTextRecognized(lines: List<OcrLine>, capturedAtMillis: Long, isPhoto: Boolean = false) {
         if (capturedAtMillis <= resetAtMillis) return
         recognizedText = lines.joinToString("\n") { it.text }
-        nutrients = scan.observe(lines, capturedAtMillis)
-        numericFallback = fallback.observe(lines, capturedAtMillis, nutrients)
+        nutrients = scan.observe(lines, capturedAtMillis, isPhoto)
+        numericFallback = fallback.observe(lines, capturedAtMillis, nutrients, isPhoto)
     }
 
     fun reset(timestampMillis: Long) {

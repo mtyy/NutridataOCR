@@ -6,6 +6,55 @@ import org.junit.Test
 
 class NutritionScanTest {
     @Test
+    fun liveFramesAndPhotosAccumulateThroughBothPipelinesAndResetRejectsLateResults() {
+        val model = OcrViewModel()
+        val fat = OcrLine(
+            text = "Fat 8 g",
+            confidence = 0.99f,
+            textHeightPx = 96f,
+            tokens = listOf(OcrToken("Fat", 0.99f), OcrToken("8g", 0.99f)),
+        )
+
+        model.onTextRecognized(listOf(fat), 1_000)
+        assertEquals(1, model.numericFallback.numbers.single().samples)
+        model.onTextRecognized(listOf(fat), 1_100, isPhoto = true)
+        assertEquals(2, model.numericFallback.numbers.single().samples)
+        model.onTextRecognized(listOf(fat), 1_100, isPhoto = true)
+        model.onTextRecognized(listOf(fat), 1_200)
+        assertEquals(2, model.numericFallback.numbers.single().samples)
+
+        val correctedFat = fat.copy(
+            text = "Fat 9 g",
+            tokens = listOf(OcrToken("Fat", 0.99f), OcrToken("9g", 0.99f)),
+        )
+        model.onTextRecognized(listOf(correctedFat), 1_500)
+        assertEquals(listOf(NutrientValue("8", "g")), model.nutrients[Nutrient.FAT])
+        model.onTextRecognized(listOf(correctedFat), 1_600, isPhoto = true)
+        model.onTextRecognized(listOf(correctedFat), 1_700, isPhoto = true)
+        assertEquals(listOf(NutrientValue("9", "g")), model.nutrients[Nutrient.FAT])
+
+        model.onTextRecognized(listOf(OcrLine("Protein 12 g")), 6_000, isPhoto = true)
+        model.onTextRecognized(emptyList(), 11_000)
+        assertEquals(
+            mapOf(
+                Nutrient.FAT to listOf(NutrientValue("9", "g")),
+                Nutrient.PROTEIN to listOf(NutrientValue("12", "g")),
+            ),
+            model.nutrients,
+        )
+        assertEquals(
+            mapOf(NutrientValue("8", "g") to 2, NutrientValue("9", "g") to 3),
+            model.numericFallback.numbers.associate { it.number to it.samples },
+        )
+
+        model.reset(12_000)
+        model.onTextRecognized(listOf(fat), 11_999, isPhoto = true)
+        assertTrue(model.nutrients.isEmpty())
+        assertEquals(NumericFallbackResult(), model.numericFallback)
+        assertEquals("", model.recognizedText)
+    }
+
+    @Test
     fun keepsNutrientsAcrossPartialAndUnreadableFramesAndResetsForNextProduct() {
         val scan = NutritionScan()
         scan.observe(listOf(OcrLine("Fat 8 g")), 0)

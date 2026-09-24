@@ -5,6 +5,10 @@
     <string name="rear_camera_auto">Rear camera %1$s (auto)</string>
     <string name="rear_camera_focal_length">Rear camera %1$s (%2$.1f mm)</string>
     <string name="camera_switch_failed">Could not open that lens</string>
+    <string name="take_photo">Take photo</string>
+    <string name="photo_scanned">Photo scanned</string>
+    <string name="photo_no_text">No text found. Try another photo.</string>
+    <string name="photo_scan_failed">Could not scan photo. Try again.</string>
     <string name="nutrients">Nutrients</string>
     <string name="new_scan">New scan</string>
     <string name="no_nutrients_detected">No nutrients detected</string>
