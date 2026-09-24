@@ -6,13 +6,13 @@ Create an Android app that lets users log in to [tap.nutridata.ee](https://tap.n
 
 ## Prototype Stage
 
-This is a prototype: a NutriData WebView with a separate Compose camera screen for live OCR supplemented by high-resolution photos, raw text, and nutrient extraction for English, Estonian, Latvian, Finnish, Lithuanian, German, and Polish. Russian is deferred. Login uses the website itself and still needs user verification. Automated form filling and saving products are not implemented yet.
+This is a prototype: a NutriData WebView with a separate Compose camera screen for live OCR supplemented by high-resolution photos, raw text, and nutrient extraction for English, Estonian, Latvian, Finnish, Lithuanian, German, and Polish. Russian is deferred. Login uses the website itself and still needs user verification. Reviewed label values can fill a new-food draft based on a similar food; saving remains a manual website action.
 
 Keep automated tests minimal: add them only when needed to move to the next step. Use a build check for compilation and rely on the user to verify camera behavior and OCR accuracy with real labels on an Android device.
 
 ### WebView And TLS
 
-- The app opens `https://tap.nutridata.ee/et/`. **Scan food** opens the existing scanner in another activity; returning leaves the current web page in place while its activity remains alive. Website cookies and DOM storage are enabled. External links open outside the WebView. Nothing is automatically filled or submitted.
+- The app opens `https://tap.nutridata.ee/et/`. **Scan food** opens the scanner in another activity; returning leaves the current web page in place while its activity remains alive. Website cookies and DOM storage are enabled. External links open outside the WebView. Filling requires explicit confirmation; nothing is submitted automatically.
 - On 2026-09-24 the server sent only its leaf TLS certificate, without its Sectigo DV R36 intermediate. Both the emulator and Samsung S23 rejected this incomplete chain.
 - `network_security_config.xml` adds the bundled **Sectigo Public Server Authentication CA DV R36** as a trust anchor for exactly `tap.nutridata.ee`, with no subdomains. System CAs remain trusted; other hosts receive only system trust. Cleartext is disabled and SSL errors are still cancelled. This is APK-local configuration, with no device certificate installation or system-setting changes.
 - This explicitly trusts the intermediate for this host, rather than simply caching a chain or pinning the current leaf. Leaf hostname, signature and validity checks remain enforced, but the path terminates at the bundled intermediate instead of validating its upstream root at runtime. Remove the workaround once the server supplies a complete chain accepted by Android; review it if the issuing CA changes or is revoked. The intermediate expires on 2036-03-21; bundled trust anchors need explicit maintenance.
@@ -50,6 +50,17 @@ Keep automated tests minimal: add them only when needed to move to the next step
 - Keep the session through rotation, but not process death. Use **New scan** when moving to another product; it clears the history and rejects already-processing frames from before the reset.
 - Results remain heuristic. Parsing still needs names and values on the same OCR line; multiple values stay grouped, without matching serving columns across views or assuming a per-100-g basis.
 
+### Filling The New-Food Draft
+
+- In the app WebView, open **Lisa oma toiduaine**, choose **Vota aluseks sarnane toit**, and leave the package-data table open before tapping **Scan food**. The VS Code browser is only an inspection surface; its login and draft are not shared with the Android WebView.
+- **Review and fill draft** freezes the six effective values. **Confirm and fill** explicitly confirms that snapshot, returns it through an activity result and fills the original draft. Values are assumed to be **per 100 g**, as requested; there is no serving conversion step. Milligrams are converted to grams and values use three decimal places.
+- Missing values, multiple columns, comparisons such as `<0.5`, and contradictions between confirmed values require correction. A comparison needs a user-entered numeric estimate. Stable OCR alone is not confirmation. Imported Gemini values remain separate; enter reviewed Gemini readings manually to use them here.
+- Confirmed fat, saturated fat, available carbohydrates, sugars, protein and salt stay fixed. Salt sets sodium; inherited polyols are capped to the carbohydrate remainder and starch is recalculated. Inherited fatty-acid and sugar subtypes are reduced proportionally when necessary. Fibre and alcohol are capped to the remaining mass. Other inherited parent/child conflicts are reconciled, and energy is recalculated by NutriData. These adjustments are estimates, not new label evidence.
+- The adapter uses the currently inspected Angular editor's nutrient IDs and internal calculation methods, including hidden rows. It batches reconciled values, sends input/change events for the six visible fields, runs the site's calculation and comparison checks, then reads back both model and visible label values. A failure restores the original nutrient values. The result lists adjusted inherited values and calculated energy.
+- Filling is restricted to the same in-memory `add`/`copy` editor, base food, form state and nutrient snapshot captured before scanning. Existing-food editors, changed drafts, page reloads and wrong origins are rejected. Activity/WebView recreation loses the page marker and therefore requires scanning again. No save, submit, recipe API or diary-portion action is invoked.
+- The adapter depends on the current website's private Angular shape. A site update can disable filling until the adapter is updated; it must not guess a different target. Android end-to-end authenticated filling remains to be verified by the user. A detached copy of the production editor accepted a representative reconciled label with no nutrient errors and no live-draft changes.
+- Focused offline regression check: `node app/src/test/js/nutridata-draft.test.cjs`. Covers fixed values, proportional reduction, zeroes, conflicts, stale drafts, existing-food rejection, wrong origins, read-back failure and rollback. No device installation is part of this check.
+
 ### Independent Numeric Fallback
 
 - Collect individual OCR numbers with confidence at least 0.85, even when surrounding label text is unreliable. Show them immediately; require two accepted sightings before using them in hypotheses. Throttle live sightings to 300 ms; each distinct photo can contribute separately. This threshold is an OCR score, not a calibrated probability of correctness.
@@ -76,9 +87,8 @@ The app wraps the existing Nutridata web interface in a WebView, with native And
 2. Start adding a new food product.
 3. Capture the product label with the camera.
 4. Review and correct the OCR results.
-5. Use the reviewed information to complete and save the product in Nutridata.
-
-The mechanism for transferring OCR results into the product form remains to be decided.
+5. Confirm the six per-100-g values to fill and reconcile the original new-food draft.
+6. Review the resulting website form, set the product name, and save manually when ready.
 
 ## Possible Later Features
 

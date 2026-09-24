@@ -65,7 +65,11 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 
 @Composable
-internal fun OcrScreen(model: OcrViewModel, modifier: Modifier = Modifier) {
+internal fun OcrScreen(
+    model: OcrViewModel,
+    modifier: Modifier = Modifier,
+    onFillDraft: ((LabelTransfer) -> Unit)? = null,
+) {
     val context = LocalContext.current
     var resetAtMillis by rememberSaveable { mutableStateOf(Long.MIN_VALUE) }
     var pastedResponse by rememberSaveable { mutableStateOf("") }
@@ -74,6 +78,8 @@ internal fun OcrScreen(model: OcrViewModel, modifier: Modifier = Modifier) {
     var geminiExpanded by rememberSaveable { mutableStateOf(false) }
     var diagnosticsExpanded by rememberSaveable { mutableStateOf(false) }
     var editingNutrient by rememberSaveable { mutableStateOf<Nutrient?>(null) }
+    var reviewedLabel by remember { mutableStateOf<LabelTransfer?>(null) }
+    var reviewError by remember { mutableStateOf<String?>(null) }
     val importedNutrition = remember(importedResponse) {
         runCatching { parseGeminiResponse(importedResponse) }.getOrNull()
     }
@@ -123,6 +129,38 @@ internal fun OcrScreen(model: OcrViewModel, modifier: Modifier = Modifier) {
                 editingNutrient = null
             },
             onDismiss = { editingNutrient = null },
+        )
+    }
+
+    reviewedLabel?.let { label ->
+        AlertDialog(
+            onDismissRequest = { reviewedLabel = null },
+            title = { Text(stringResource(R.string.fill_review_title)) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LABEL_COMPONENTS.forEach { (nutrient, component) ->
+                        Text("${stringResource(nutrient.labelResource())}: ${label.amounts.getValue(component).stripTrailingZeros().toPlainString()} g")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { reviewedLabel = null; onFillDraft?.invoke(label) }) {
+                    Text(stringResource(R.string.fill_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { reviewedLabel = null }) { Text(stringResource(android.R.string.cancel)) }
+            },
+        )
+    }
+    reviewError?.let { error ->
+        AlertDialog(
+            onDismissRequest = { reviewError = null },
+            title = { Text(stringResource(R.string.fill_review_title)) },
+            text = { Text(error) },
+            confirmButton = {
+                TextButton(onClick = { reviewError = null }) { Text(stringResource(android.R.string.ok)) }
+            },
         )
     }
 
@@ -189,6 +227,19 @@ internal fun OcrScreen(model: OcrViewModel, modifier: Modifier = Modifier) {
                 progress = { readyCount.toFloat() / REQUIRED_SCAN_NUTRIENTS.size },
                 modifier = Modifier.fillMaxWidth(),
             )
+            if (onFillDraft != null) {
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        runCatching { reviewLabel(model.effectiveNutrients, model.manualNutrients.keys) }
+                            .onSuccess { reviewedLabel = it }
+                            .onFailure { reviewError = it.message }
+                    },
+                ) {
+                    Icon(Icons.Default.CheckCircle, contentDescription = null)
+                    Text(stringResource(R.string.fill_review))
+                }
+            }
             Column(
                 modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()),
             ) {

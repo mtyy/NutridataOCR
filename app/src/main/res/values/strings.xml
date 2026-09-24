@@ -2,6 +2,13 @@
     <string name="app_name">Nutidata OCR</string>
     <string name="scan_food">Scan food</string>
     <string name="return_to_diary">Return to diary</string>
+    <string name="fill_review">Review and fill draft</string>
+    <string name="fill_review_title">Label values per 100 g</string>
+    <string name="fill_confirm">Confirm and fill</string>
+    <string name="fill_result">Food draft</string>
+    <string name="fill_success">6 confirmed label values filled; %1$d inherited values adjusted. Nothing saved.</string>
+    <string name="fill_energy">Calculated energy: %1$s kcal</string>
+    <string name="fill_failed">Could not fill the draft. Reopen the intended new food draft and scan again.</string>
     <string name="web_back">Back</string>
     <string name="web_reload">Reload</string>
     <string name="web_retry">Retry</string>

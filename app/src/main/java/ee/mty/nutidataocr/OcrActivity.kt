@@ -1,5 +1,6 @@
 package ee.mty.nutidataocr
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -41,7 +42,18 @@ class OcrActivity : ComponentActivity() {
                         )
                     },
                 ) { innerPadding ->
-                    OcrScreen(model = ocrViewModel, modifier = Modifier.padding(innerPadding))
+                    OcrScreen(
+                        model = ocrViewModel,
+                        modifier = Modifier.padding(innerPadding),
+                        onFillDraft = intent.getStringExtra(DRAFT_TOKEN_EXTRA)?.let { token ->
+                            { label: LabelTransfer ->
+                                setResult(RESULT_OK, Intent()
+                                    .putExtra(DRAFT_TOKEN_EXTRA, token)
+                                    .putExtra(LABEL_TRANSFER_EXTRA, label.toJson()))
+                                finish()
+                            }
+                        },
+                    )
                 }
             }
         }

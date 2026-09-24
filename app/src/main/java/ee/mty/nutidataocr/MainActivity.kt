@@ -22,16 +22,20 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,12 +55,48 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import ee.mty.nutidataocr.ui.theme.NutidataOCRTheme
+import org.json.JSONObject
+import org.json.JSONTokener
+import java.util.UUID
 
 class MainActivity : ComponentActivity() {
     private lateinit var webView: WebView
     private var canGoBack by mutableStateOf(false)
     private var loadingProgress by mutableIntStateOf(0)
     private var pageError by mutableStateOf<Int?>(null)
+    private var transferBusy by mutableStateOf(false)
+    private var transferMessage by mutableStateOf<String?>(null)
+    private val draftScript by lazy { assets.open("nutridata-draft.js").bufferedReader().use { it.readText() } }
+    private val scanner = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == RESULT_OK) {
+            val token = result.data?.getStringExtra(DRAFT_TOKEN_EXTRA)
+            val payload = result.data?.getStringExtra(LABEL_TRANSFER_EXTRA)
+            if (token != null && payload != null && payload.length < 4096) {
+                runDraftCommand("apply", token, payload) { response ->
+                    transferMessage = if (response.optBoolean("ok")) {
+                        val changes = response.getJSONArray("changes")
+                        buildString {
+                            append(getString(R.string.fill_success, changes.length()))
+                            append("\n\n")
+                            append(getString(R.string.fill_energy, response.optString("kcal")))
+                            for (index in 0 until changes.length()) {
+                                val change = changes.getJSONObject(index)
+                                val unit = when (change.optString("unit")) {
+                                    "UNIT_GRAM" -> "g"
+                                    "UNIT_MILLIGRAM" -> "mg"
+                                    "UNIT_MICROGRAM" -> "mcg"
+                                    "UNIT_KILOCALORIE" -> "kcal"
+                                    "UNIT_KILOJOULE" -> "kJ"
+                                    else -> ""
+                                }
+                                append("\n${change.getString("name")}: ${change.optString("before")} -> ${change.optString("after")} $unit")
+                            }
+                        }
+                    } else response.optString("error", getString(R.string.fill_failed))
+                }
+            }
+        }
+    }
 
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -68,24 +108,32 @@ class MainActivity : ComponentActivity() {
         canGoBack = webView.canGoBack()
         setContent {
             NutidataOCRTheme {
-                BackHandler(enabled = canGoBack) { webView.goBack() }
+                BackHandler(enabled = canGoBack || transferBusy) { if (!transferBusy) webView.goBack() }
+                transferMessage?.let { message ->
+                    AlertDialog(
+                        onDismissRequest = { transferMessage = null },
+                        title = { Text(stringResource(R.string.fill_result)) },
+                        text = { Text(message, modifier = Modifier.verticalScroll(rememberScrollState())) },
+                        confirmButton = {
+                            TextButton(onClick = { transferMessage = null }) { Text(stringResource(android.R.string.ok)) }
+                        },
+                    )
+                }
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                     topBar = {
                         TopAppBar(
                             title = { Text("NutriData", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                             navigationIcon = {
-                                IconButton(onClick = { webView.goBack() }, enabled = canGoBack) {
+                                IconButton(onClick = { webView.goBack() }, enabled = canGoBack && !transferBusy) {
                                     Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.web_back))
                                 }
                             },
                             actions = {
-                                IconButton(onClick = { webView.reload() }) {
+                                IconButton(onClick = { webView.reload() }, enabled = !transferBusy) {
                                     Icon(Icons.Default.Refresh, stringResource(R.string.web_reload))
                                 }
-                                TextButton(onClick = {
-                                    startActivity(Intent(this@MainActivity, OcrActivity::class.java))
-                                }) {
+                                TextButton(onClick = { scanFood() }, enabled = !transferBusy) {
                                     Icon(Icons.Default.Add, contentDescription = null)
                                     Text(stringResource(R.string.scan_food))
                                 }
@@ -120,6 +168,32 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    private fun scanFood() {
+        val token = UUID.randomUUID().toString()
+        runDraftCommand("capture", token) { response ->
+            val intent = Intent(this, OcrActivity::class.java)
+            if (response.optBoolean("ok")) intent.putExtra(DRAFT_TOKEN_EXTRA, token)
+            else Toast.makeText(this, response.optString("error"), Toast.LENGTH_LONG).show()
+            scanner.launch(intent)
+        }
+    }
+
+    private fun runDraftCommand(
+        command: String,
+        token: String,
+        payload: String = "null",
+        onResult: (JSONObject) -> Unit,
+    ) {
+        transferBusy = true
+        val script = "$draftScript\nJSON.stringify(NutridataDraft.run(${JSONObject.quote(command)}, ${JSONObject.quote(token)}, $payload));"
+        webView.evaluateJavascript(script) { encoded ->
+            transferBusy = false
+            val response = runCatching { JSONObject(JSONTokener(encoded).nextValue() as String) }
+                .getOrElse { JSONObject().put("ok", false).put("error", getString(R.string.fill_failed)) }
+            onResult(response)
         }
     }
 
