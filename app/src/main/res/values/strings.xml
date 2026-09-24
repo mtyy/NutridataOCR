@@ -1,5 +1,13 @@
 <resources>
     <string name="app_name">Nutidata OCR</string>
+    <string name="scan_food">Scan food</string>
+    <string name="return_to_diary">Return to diary</string>
+    <string name="web_back">Back</string>
+    <string name="web_reload">Reload</string>
+    <string name="web_retry">Retry</string>
+    <string name="web_load_failed">Could not load NutriData. Check your connection and try again.</string>
+    <string name="web_secure_connection_failed">Could not establish a secure connection to NutriData.</string>
+    <string name="web_no_link_handler">No app available to open this link.</string>
     <string name="allow_camera">Allow camera</string>
     <string name="rear_camera">Rear camera %1$s</string>
     <string name="rear_camera_auto">Rear camera %1$s (auto)</string>

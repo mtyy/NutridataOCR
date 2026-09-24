@@ -6,9 +6,19 @@ Create an Android app that lets users log in to [tap.nutridata.ee](https://tap.n
 
 ## Prototype Stage
 
-This is a prototype: a Compose camera screen with live OCR supplemented by high-resolution photos, raw text, and nutrient extraction for English, Estonian, Latvian, Finnish, Lithuanian, German, and Polish. Russian is deferred. Login, WebView integration, and saving products are not implemented yet.
+This is a prototype: a NutriData WebView with a separate Compose camera screen for live OCR supplemented by high-resolution photos, raw text, and nutrient extraction for English, Estonian, Latvian, Finnish, Lithuanian, German, and Polish. Russian is deferred. Login uses the website itself and still needs user verification. Automated form filling and saving products are not implemented yet.
 
 Keep automated tests minimal: add them only when needed to move to the next step. Use a build check for compilation and rely on the user to verify camera behavior and OCR accuracy with real labels on an Android device.
+
+### WebView And TLS
+
+- The app opens `https://tap.nutridata.ee/et/`. **Scan food** opens the existing scanner in another activity; returning leaves the current web page in place while its activity remains alive. Website cookies and DOM storage are enabled. External links open outside the WebView. Nothing is automatically filled or submitted.
+- On 2026-09-24 the server sent only its leaf TLS certificate, without its Sectigo DV R36 intermediate. Both the emulator and Samsung S23 rejected this incomplete chain.
+- `network_security_config.xml` adds the bundled **Sectigo Public Server Authentication CA DV R36** as a trust anchor for exactly `tap.nutridata.ee`, with no subdomains. System CAs remain trusted; other hosts receive only system trust. Cleartext is disabled and SSL errors are still cancelled. This is APK-local configuration, with no device certificate installation or system-setting changes.
+- This explicitly trusts the intermediate for this host, rather than simply caching a chain or pinning the current leaf. Leaf hostname, signature and validity checks remain enforced, but the path terminates at the bundled intermediate instead of validating its upstream root at runtime. Remove the workaround once the server supplies a complete chain accepted by Android; review it if the issuing CA changes or is revoked. The intermediate expires on 2036-03-21; bundled trust anchors need explicit maintenance.
+- Certificate source: `http://crt.sectigo.com/SectigoPublicServerAuthenticationCADVR36.crt`, as identified by the site's leaf certificate. Its chain was independently verified with macOS system trust using `security verify-cert -c <intermediate.pem> -p basic` on 2026-09-24, not trusted solely because of that HTTP download.
+- Intermediate SHA-256 fingerprint: `8C:54:C3:34:B6:6B:A4:E4:26:77:2A:F4:A3:F9:13:6C:19:A1:AE:C7:29:FD:B2:8C:53:5C:07:A5:A4:EF:22:E0`.
+- Verified with a strict TLS handshake, `:app:assembleDebug`, and an emulator smoke test that reached **Logi sisse**, opened **Scan food**, and returned to the website. The fixed build has not been installed on the Samsung. Authentication and nutrition-form automation are not yet verified.
 
 ### Live OCR With Photos
 
@@ -47,7 +57,7 @@ Keep automated tests minimal: add them only when needed to move to the next step
 
 ## Proposed Approach
 
-The app will likely be a WebView wrapper around the existing Nutridata web interface, with native Android features to enhance the experience. WebView suitability, including compatibility with the site's login flow, still needs to be confirmed.
+The app wraps the existing Nutridata web interface in a WebView, with native Android features to enhance the experience. Public-page loading is verified; compatibility with the authenticated food-entry flow still needs to be confirmed.
 
 ## Planned Product Scope
 
