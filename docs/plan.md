@@ -49,7 +49,8 @@ Keep automated tests minimal: add them only when needed to move to the next step
 - Keep up to 12 observations per nutrient, accepting live samples at most every 300 ms and each distinct photo separately. Recent observations, ML Kit confidence, and larger numeric text receive more weight. Text size is only a bounded quality hint, not proof that zoom improved accuracy.
 - Show the first reading immediately. Replace it only when another value has at least two supporting observations and a weighted score more than 25% higher. Normalize equivalent decimal formatting, such as `8` and `8.0`.
 - Keep the session through rotation, but not process death. Use **New scan** when moving to another product; it clears the history and rejects already-processing frames from before the reset.
-- Results remain heuristic. Parsing still needs names and values on the same OCR line; multiple values stay grouped, without matching serving columns across views or assuming a per-100-g basis.
+- Nutrient aliases cover common inflected forms in Estonian, English, Latvian, Finnish, Lithuanian, German and Polish. Matching ignores case and accents, including missing umlauts, and accepts selected German `ae` spellings. Longer names (at least six characters) allow one inserted, missing or substituted character using a bounded Apache Commons Text edit distance. Missing spaces and hyphenated phrases can match too; short names, numbers and units remain exact. Ambiguous fuzzy matches are not guessed. English unsaturated/trans-fat phrases are excluded from total-fat matching.
+- Results remain heuristic. Parsing still needs names and values on the same OCR line; wrapped phrases such as `kullastunud` on one line and `rasvhapped 2 g` on the next are not joined. Multiple values stay grouped, without matching serving columns across views or assuming a per-100-g basis.
 
 ### Filling The New-Food Draft
 

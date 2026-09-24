@@ -2,6 +2,7 @@ package ee.mty.nutidataocr
 
 import java.text.Normalizer
 import java.util.Locale
+import org.apache.commons.text.similarity.LevenshteinDistance
 
 internal enum class Nutrient {
     ENERGY_KJ, ENERGY_KCAL, FAT, SATURATES, CARBOHYDRATES, SUGARS, FIBRE, PROTEIN, SALT
@@ -11,35 +12,38 @@ internal data class NutrientValue(val amount: String, val unit: String)
 
 private val nutrientNames = mapOf(
     Nutrient.FAT to listOf(
-        "total fat", "fat", "rasv", "rasvad", "tauki", "rasva", "rasvaa", "rasvat",
-        "riebalai", "fett", "tluszcz",
+        "total fat", "fat", "fats", "rasv", "rasvad", "rasvu", "tauki", "tauku", "taukus",
+        "rasva", "rasvaa", "rasvat", "rasvoja", "riebalai", "riebalu", "riebalus",
+        "fett", "fette", "tluszcz", "tluszcze", "tluszczu",
     ),
     Nutrient.SATURATES to listOf(
-        "saturated fat", "saturated fatty acids", "saturates",
+        "saturated fat", "saturated fats", "saturated fatty acids", "saturated fatty acid", "saturates", "saturated",
         "kullastunud rasvhapped", "kullastunud rasvhappeid", "kullastunud",
-        "piesatinatas taukskabes", "piesatinatie tauki",
+        "piesatinatas taukskabes", "piesatinato taukskabju", "piesatinatie tauki",
         "tyydyttynytta rasvaa", "tyydyttynytta", "tyydyttyneet rasvahapot",
-        "sociosios riebalu rugstys", "sociuju riebalu rugsciu",
-        "gesattigte fettsauren", "kwasy tluszczowe nasycone", "kwasy nasycone",
+        "sociosios riebalu rugstys", "sociuju riebalu rugsciu", "sociuju riebalu rugstys",
+        "gesattigte fettsauren", "gesaettigte fettsaeuren", "kwasy tluszczowe nasycone", "kwasy nasycone",
     ),
     Nutrient.CARBOHYDRATES to listOf(
-        "carbohydrates", "carbohydrate", "susivesikud", "oglhidrati",
-        "hiilihydraatit", "hiilihydraattia", "angliavandeniai", "kohlenhydrate", "weglowodany",
+        "carbohydrates", "carbohydrate", "carbs", "susivesikud", "susivesikuid", "susivesikute",
+        "oglhidrati", "oglhidratu", "hiilihydraatit", "hiilihydraattia", "hiilihydraatteja",
+        "angliavandeniai", "angliavandeniu", "kohlenhydrate", "kohlenhydraten", "weglowodany", "weglowodanow",
     ),
     Nutrient.SUGARS to listOf(
-        "sugars", "sugar", "suhkrud", "suhkruid", "cukuri", "cukuru",
-        "sokerit", "sokereita", "cukrus", "cukru", "zucker", "cukry", "cukier",
+        "sugars", "sugar", "suhkrud", "suhkruid", "suhkur", "suhkru", "cukuri", "cukuru",
+        "sokerit", "sokereita", "sokeria", "cukrus", "cukru", "zucker", "cukry", "cukier", "cukrow",
     ),
     Nutrient.FIBRE to listOf(
-        "dietary fibre", "dietary fiber", "fibre", "fiber", "kiudained", "kiudaineid",
-        "skiedrvielas", "ravintokuitu", "kuitu", "skaidulines medziagos",
-        "skaiduliniu medziagu", "ballaststoffe", "blonnik",
+        "dietary fibre", "dietary fiber", "fibre", "fiber", "fibres", "fibers", "kiudained", "kiudaineid", "kiudaine",
+        "skiedrvielas", "skiedrvielu", "ravintokuitu", "ravintokuitua", "kuitu", "kuitua", "skaidulines medziagos",
+        "skaiduliniu medziagu", "ballaststoffe", "ballaststoffen", "blonnik", "blonnika",
     ),
     Nutrient.PROTEIN to listOf(
-        "proteins", "protein", "valk", "valgud", "olbaltumvielas",
-        "proteiini", "proteiinia", "baltymai", "eiweiss", "bialko",
+        "proteins", "protein", "valk", "valgud", "valke", "valgu", "proteiin", "proteiinid",
+        "olbaltumvielas", "olbaltumvielu", "proteiini", "proteiinia", "baltymai", "baltymu",
+        "eiweiss", "eiweisse", "proteine", "bialko", "bialka",
     ),
-    Nutrient.SALT to listOf("salt", "sool", "sals", "suola", "druska", "salz", "sol"),
+    Nutrient.SALT to listOf("salt", "salts", "sool", "soola", "sals", "sali", "suola", "suolaa", "druska", "druskos", "salz", "sol", "soli"),
 )
 private val nutrientByName = nutrientNames.flatMap { (nutrient, names) ->
     names.map { name -> name to nutrient }
@@ -52,6 +56,57 @@ private val namePattern = Regex(
 private val valuePattern = Regex("""(?<![\p{L}\d.,+\-])([<>]?\s*\d+(?:[.,]\d+)?)\s*(kcal|kj|mg|g)\b""")
 private val accentsPattern = Regex("\\p{M}+")
 private val horizontalSpacePattern = Regex("[^\\S\\r\\n]+")
+private val wordPattern = Regex("[\\p{L}\\d]+")
+private val unsupportedFatPattern = Regex(
+    "(?<![\\p{L}])(?:(?:mono|poly)?unsaturated[ -]+fat(?:ty[ -]+acids?|s)?|trans[ -]+fats?)(?![\\p{L}])"
+)
+private val fuzzyNamesByLength = nutrientByName.entries.filter { it.key.length >= 6 }.groupBy { it.key.length }
+private val maxNameLength = nutrientByName.keys.maxOf { it.length }
+private val maxNameWords = nutrientByName.keys.maxOf { name -> name.count { it == ' ' } + 1 } + 1
+private val nameDistance = LevenshteinDistance(1)
+
+private data class NutrientNameMatch(val nutrient: Nutrient?, val range: IntRange, val distance: Int = 0)
+
+private fun findNutrientNames(line: String): List<NutrientNameMatch> {
+    val excluded = unsupportedFatPattern.findAll(line).map { NutrientNameMatch(null, it.range) }.toList()
+    fun overlaps(first: IntRange, second: IntRange) = first.first <= second.last && second.first <= first.last
+    val exact = namePattern.findAll(line)
+        .filter { match -> excluded.none { overlaps(it.range, match.range) } }
+        .map { NutrientNameMatch(nutrientByName.getValue(it.value), it.range) }.toList()
+    val candidates = exact.toMutableList()
+    val words = wordPattern.findAll(line).toList()
+    for (start in words.indices) {
+        for (count in 1..minOf(maxNameWords, words.size - start)) {
+            val selected = words.subList(start, start + count)
+            if (selected.last().value.none { it.isLetter() }) break
+            if (count > 1) {
+                val gap = line.substring(selected[count - 2].range.last + 1, selected.last().range.first)
+                if (gap.any { !it.isWhitespace() && it != '-' }) break
+            }
+            val text = selected.joinToString(" ") { it.value }
+            if (text.length > maxNameLength + 1) break
+            if (text.length < 6) continue
+            val range = selected.first().range.first..selected.last().range.last
+            if (excluded.any { overlaps(it.range, range) } ||
+                exact.any { it.range.first <= range.first && it.range.last >= range.last }
+            ) continue
+            val matches = (text.length - 1..text.length + 1).flatMap { fuzzyNamesByLength[it].orEmpty() }
+                .mapNotNull { entry ->
+                    val distance = nameDistance.apply(text, entry.key)
+                    if (distance < 0) null else NutrientNameMatch(entry.value, range, distance)
+                }
+            val bestDistance = matches.minOfOrNull { it.distance } ?: continue
+            val best = matches.filter { it.distance == bestDistance }.distinctBy { it.nutrient }
+            if (best.size == 1) candidates.add(best.single())
+        }
+    }
+    val chosen = excluded.toMutableList()
+    candidates.sortedWith(compareByDescending<NutrientNameMatch> { it.range.last - it.range.first }
+        .thenBy { it.distance }).forEach { candidate ->
+        if (chosen.none { overlaps(it.range, candidate.range) }) chosen.add(candidate)
+    }
+    return chosen.sortedBy { it.range.first }
+}
 
 internal fun parseNutrition(text: String): Map<Nutrient, List<NutrientValue>> {
     val normalized = Normalizer.normalize(text.lowercase(Locale.ROOT), Normalizer.Form.NFD)
@@ -70,13 +125,15 @@ internal fun parseNutrition(text: String): Map<Nutrient, List<NutrientValue>> {
             result.putIfAbsent(Nutrient.ENERGY_KCAL, it)
         }
 
-        val names = namePattern.findAll(line).toList()
+        if (values.none { it.unit == "g" || it.unit == "mg" }) continue
+        val names = findNutrientNames(line)
         names.forEachIndexed { index, match ->
+            val nutrient = match.nutrient ?: return@forEachIndexed
             val end = names.getOrNull(index + 1)?.range?.first ?: line.length
             val nutrientValues = readValues(line.substring(match.range.last + 1, end))
                 .filter { it.unit == "g" || it.unit == "mg" }
             if (nutrientValues.isNotEmpty()) {
-                result.putIfAbsent(nutrientByName.getValue(match.value), nutrientValues)
+                result.putIfAbsent(nutrient, nutrientValues)
             }
         }
     }

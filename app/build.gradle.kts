@@ -51,6 +51,7 @@ dependencies {
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
     implementation(libs.mlkit.text.recognition)
+    implementation(libs.commons.text)
     testImplementation(libs.junit)
     testImplementation(libs.json)
     androidTestImplementation(platform(libs.androidx.compose.bom))

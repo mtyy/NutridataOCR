@@ -1,5 +1,6 @@
 package ee.mty.nutidataocr
 
+import java.text.Normalizer
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -9,11 +10,18 @@ class NutritionParserTest {
         val labels = listOf(
             listOf("Fat", "of which saturates", "Carbohydrates", "of which sugars", "Fibre", "Protein", "Salt"),
             listOf("Rasvad", "millest k\u00fcllastunud rasvhapped", "S\u00fcsivesikud", "millest suhkrud", "Kiudained", "Valgud", "Sool"),
+            listOf("Rasva", "millest k\u00fcllastunud rasvhappeid", "S\u00fcsivesikuid", "millest suhkruid", "Kiudaineid", "Valke", "Soola"),
             listOf("Tauki", "tostarp pies\u0101tin\u0101t\u0101s tauksk\u0101bes", "Og\u013chidr\u0101ti", "tostarp cukuri", "\u0160\u0137iedrvielas", "Olbaltumvielas", "S\u0101ls"),
             listOf("Rasva", "josta tyydyttynytt\u00e4", "Hiilihydraatit", "joista sokereita", "Ravintokuitu", "Proteiini", "Suola"),
             listOf("Riebalai", "i\u0161 kuri\u0173 so\u010diosios riebal\u0173 r\u016bg\u0161tys", "Angliavandeniai", "i\u0161 kuri\u0173 cukr\u0173", "Skaidulin\u0117s med\u017eiagos", "Baltymai", "Druska"),
             listOf("Fett", "davon ges\u00e4ttigte Fetts\u00e4uren", "Kohlenhydrate", "davon Zucker", "Ballaststoffe", "Eiwei\u00df", "Salz"),
             listOf("T\u0142uszcz", "w tym kwasy t\u0142uszczowe nasycone", "W\u0119glowodany", "w tym cukry", "B\u0142onnik", "Bia\u0142ko", "S\u00f3l"),
+            listOf("Rasvu", "Kullastunud rasvhappeid", "Susivesikute", "Suhkru", "Kiudaine", "Valgu", "Soola"),
+            listOf("Tauku", "Piesatinato taukskabju", "Oglhidratu", "Cukuru", "Skiedrvielu", "Olbaltumvielu", "Sali"),
+            listOf("Rasvoja", "Tyydyttynytta", "Hiilihydraatteja", "Sokeria", "Kuitua", "Proteiinia", "Suolaa"),
+            listOf("Riebalu", "Sociuju riebalu rugsciu", "Angliavandeniu", "Cukru", "Skaiduliniu medziagu", "Baltymu", "Druskos"),
+            listOf("Fette", "Gesaettigte Fettsaeuren", "Kohlenhydraten", "Zucker", "Ballaststoffen", "Eiweisse", "Salz"),
+            listOf("Tluszczu", "Kwasy nasycone", "Weglowodanow", "Cukrow", "Blonnika", "Bialka", "Soli"),
         )
         val fields = listOf(
             Nutrient.FAT, Nutrient.SATURATES, Nutrient.CARBOHYDRATES,
@@ -31,7 +39,46 @@ class NutritionParserTest {
                 "$name ${index + 1},5 g"
             }.joinToString("\n")
             assertEquals(names.toString(), expected, parseNutrition(text))
+            val withoutAccents = Normalizer.normalize(text, Normalizer.Form.NFD)
+                .replace(Regex("\\p{M}+"), "").replace('\u0142', 'l').replace("\u00df", "ss")
+            assertEquals(names.toString(), expected, parseNutrition(withoutAccents.uppercase()))
         }
+    }
+
+    @Test
+    fun toleratesSmallOcrErrorsInLongNamesAcrossLanguages() {
+        listOf("Carbohydates", "Susiveslkuid", "Oglhldrati", "Hiilihydraatlt",
+            "Angliavandenial", "Kohlenhydratc", "Weglowodanv").forEach { name ->
+            assertEquals(name, mapOf(Nutrient.CARBOHYDRATES to listOf(NutrientValue("12.5", "g"))),
+                parseNutrition("$name 12,5 g"))
+        }
+        assertEquals(
+            mapOf(
+                Nutrient.SATURATES to listOf(NutrientValue("2", "g")),
+                Nutrient.PROTEIN to listOf(NutrientValue("6", "g")),
+                Nutrient.SUGARS to listOf(NutrientValue("1", "g")),
+            ),
+            parseNutrition("Saturatcd fat 2 g Pr0tein 6 g Suhkruld 1 g"),
+        )
+        assertEquals(mapOf(Nutrient.SATURATES to listOf(NutrientValue("2", "g"))),
+            parseNutrition("Kullastunvd rasvhapped 2 g"))
+        assertEquals(mapOf(Nutrient.PROTEIN to listOf(NutrientValue("6", "g"))),
+            parseNutrition("Pro tein 6 g"))
+        assertEquals(mapOf(Nutrient.SATURATES to listOf(NutrientValue("2", "g"))),
+            parseNutrition("Saturatedfat 2 g"))
+        assertEquals(mapOf(Nutrient.SATURATES to listOf(NutrientValue("2", "g"))),
+            parseNutrition("Saturated-fat 2 g"))
+    }
+
+    @Test
+    fun doesNotFuzzShortWordsNumbersOrUnsupportedFatTypes() {
+        listOf("Fast 2 g", "Sold 2 g", "Soolane 2 g", "Fatty 2 g", "Unsaturated fat 2 g",
+            "Monounsaturated fat 2 g", "Polyunsaturated fats 2 g", "Trans fat 2 g",
+            "Pr0tein six g", "Pr0tein 6 q", "Pr0tein\n6 g").forEach { text ->
+            assertEquals(text, emptyMap<Nutrient, List<NutrientValue>>(), parseNutrition(text))
+        }
+        assertEquals(mapOf(Nutrient.FAT to listOf(NutrientValue("8", "g"))),
+            parseNutrition("Fat 8 g Unsaturated fat 3 g"))
     }
 
     @Test

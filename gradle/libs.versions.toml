@@ -11,8 +11,10 @@ composeBom = "2026.02.01"
 cameraX = "1.5.0"
 mlkitTextRecognition = "16.0.1"
 json = "20240303"
+commonsText = "1.14.0"
 
 [libraries]
+commons-text = { group = "org.apache.commons", name = "commons-text", version.ref = "commonsText" }
 json = { group = "org.json", name = "json", version.ref = "json" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }

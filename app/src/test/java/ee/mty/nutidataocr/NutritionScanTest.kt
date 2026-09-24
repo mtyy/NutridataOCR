@@ -7,6 +7,24 @@ import org.junit.Test
 
 class NutritionScanTest {
     @Test
+    fun estonianSaturatedFatVariantsBecomeReadyWithoutReplacingTotalFat() {
+        listOf(
+            "k\u00fcllastunud rasvhapped",
+            "kullastunud rasvhapped",
+            "k\u00fcllastunudrasvhapped",
+            "k\u00fclastunud rasvhapped",
+            "millest k\u00fcllastunud rasvhappeid",
+        ).forEach { label ->
+            val model = OcrViewModel()
+            val lines = listOf(OcrLine("Rasva 8 g", confidence = 0.95f), OcrLine("$label 2,5 g", confidence = 0.95f))
+            repeat(3) { index -> model.onTextRecognized(lines, 1000 + index * 300L) }
+            assertEquals(label, listOf(NutrientValue("2.5", "g")), model.effectiveNutrients[Nutrient.SATURATES])
+            assertEquals(label, listOf(NutrientValue("8", "g")), model.effectiveNutrients[Nutrient.FAT])
+            assertTrue(label, Nutrient.SATURATES in model.readyNutrients)
+        }
+    }
+
+    @Test
     fun manualMissingValueCompletesTheChecklistWithoutBecomingAnOcrReading() {
         val model = OcrViewModel()
         val lines = listOf("Fat 8 g", "Saturates 2 g", "Carbohydrates 12 g", "Sugars 0 g", "Protein 6 g")
