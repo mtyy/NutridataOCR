@@ -17,4 +17,11 @@
     <string name="protein">Protein</string>
     <string name="salt">Salt</string>
     <string name="raw_text">Raw text</string>
+    <string name="confident_numbers">High-confidence numbers</string>
+    <string name="no_numbers_detected">No confident numbers yet</string>
+    <string name="energy_hypotheses">Possible energy matches</string>
+    <string name="no_energy_hypotheses">No hypothesis yet</string>
+    <string name="energy_hypotheses_caveat">Unverified. Same serving basis assumed; other energy sources may affect the match.</string>
+    <string name="energy_hypothesis">%1$.1f kcal: fat %2$.2f g, carbs %3$.2f g, protein %4$.2f g\nCalculated: %5$.1f kcal</string>
+    <string name="energy_hypothesis_ambiguous">%1$.1f kcal: fat %2$.2f g, carbs/protein %3$.2f / %4$.2f g (either order)\nCalculated: %5$.1f kcal</string>
 </resources>

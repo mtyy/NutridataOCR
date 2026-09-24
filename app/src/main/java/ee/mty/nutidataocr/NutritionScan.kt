@@ -2,10 +2,13 @@ package ee.mty.nutidataocr
 
 import kotlin.math.pow
 
+internal data class OcrToken(val text: String, val confidence: Float)
+
 internal data class OcrLine(
     val text: String,
     val confidence: Float = 0.5f,
     val textHeightPx: Float = 24f,
+    val tokens: List<OcrToken> = emptyList(),
 )
 
 internal class NutritionScan {

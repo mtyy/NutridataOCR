@@ -101,6 +101,26 @@ internal fun OcrScreen(model: OcrViewModel, modifier: Modifier = Modifier) {
                 )
                 Text("$label: ${values.joinToString(" / ") { "${it.amount} ${it.unit}" }}")
             }
+            Text(stringResource(R.string.confident_numbers), style = MaterialTheme.typography.titleSmall)
+            Text(
+                model.numericFallback.numbers.joinToString(", ") {
+                    "${it.number.amount} ${it.number.unit}".trim()
+                }.ifEmpty { stringResource(R.string.no_numbers_detected) }
+            )
+            Text(stringResource(R.string.energy_hypotheses), style = MaterialTheme.typography.titleSmall)
+            if (model.numericFallback.hypotheses.isEmpty()) {
+                Text(stringResource(R.string.no_energy_hypotheses))
+            } else {
+                Text(stringResource(R.string.energy_hypotheses_caveat), style = MaterialTheme.typography.bodySmall)
+                model.numericFallback.hypotheses.forEach { hypothesis ->
+                    Text(stringResource(
+                        if (hypothesis.carbsProteinAmbiguous) R.string.energy_hypothesis_ambiguous
+                        else R.string.energy_hypothesis,
+                        hypothesis.calories, hypothesis.fat, hypothesis.carbohydrates,
+                        hypothesis.protein, hypothesis.calculatedCalories,
+                    ))
+                }
+            }
             Text(stringResource(R.string.raw_text), style = MaterialTheme.typography.titleSmall)
             Text(model.recognizedText)
         }

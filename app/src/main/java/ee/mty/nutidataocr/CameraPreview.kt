@@ -155,6 +155,7 @@ internal fun CameraPreview(
                                         numbers.minOfOrNull { it.confidence } ?: line.confidence,
                                     ),
                                     textHeightPx = numbers.minOfOrNull { it.textHeightPx() } ?: 24f,
+                                    tokens = line.elements.map { OcrToken(it.text, it.confidence) },
                                 )
                             }
                             latestOnTextRecognized(lines, capturedAtMillis)
