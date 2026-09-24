@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Nutidata OCR</string>
+    <string name="allow_camera">Allow camera</string>
 </resources>
