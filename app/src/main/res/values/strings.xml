@@ -37,7 +37,10 @@
     <string name="gemini_prompt_copied">Prompt copied</string>
     <string name="gemini_response_too_long">Response exceeds 65,536 characters.</string>
     <string name="gemini_invalid_response">No valid nutrition JSON found. Expected columns with nutrients containing name, amount and unit.</string>
-    <string name="gemini_unverified">Unverified Gemini values. Kept separate from OCR readings.</string>
+    <string name="gemini_unverified">Gemini extraction, not yet confirmed.</string>
+    <string name="gemini_values_imported">Gemini values imported</string>
+    <string name="gemini_choose_column">Choose the per-100-g column</string>
+    <string name="gemini_use_column">Use this column</string>
     <string name="gemini_no_values">No nutrition values in this reply.</string>
     <string name="gemini_unknown_basis">Unknown serving basis</string>
     <string name="nutrients">Nutrients</string>

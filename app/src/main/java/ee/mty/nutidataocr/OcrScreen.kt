@@ -76,6 +76,7 @@ internal fun OcrScreen(
     var importedResponse by rememberSaveable { mutableStateOf("") }
     var responseError by rememberSaveable { mutableStateOf<Int?>(null) }
     var geminiExpanded by rememberSaveable { mutableStateOf(false) }
+    var chooseGeminiColumn by rememberSaveable { mutableStateOf(false) }
     var diagnosticsExpanded by rememberSaveable { mutableStateOf(false) }
     var editingNutrient by rememberSaveable { mutableStateOf<Nutrient?>(null) }
     var reviewedLabel by remember { mutableStateOf<LabelTransfer?>(null) }
@@ -89,9 +90,15 @@ internal fun OcrScreen(
             return
         }
         pastedResponse = text
-        if (runCatching { parseGeminiResponse(text) }.isSuccess) {
+        val response = runCatching { parseGeminiResponse(text) }.getOrNull()
+        if (response != null) {
             importedResponse = text
             responseError = null
+            val applied = model.importGemini(response)
+            chooseGeminiColumn = !applied && response.columns.isNotEmpty()
+            if (applied && model.geminiNutrients.isNotEmpty()) {
+                Toast.makeText(context, R.string.gemini_values_imported, Toast.LENGTH_SHORT).show()
+            }
         } else {
             responseError = R.string.gemini_invalid_response
         }
@@ -219,6 +226,7 @@ internal fun OcrScreen(
                     pastedResponse = ""
                     importedResponse = ""
                     responseError = null
+                    chooseGeminiColumn = false
                 }) {
                     Text(stringResource(R.string.new_scan))
                 }
@@ -231,7 +239,9 @@ internal fun OcrScreen(
                 Button(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = {
-                        runCatching { reviewLabel(model.effectiveNutrients, model.manualNutrients.keys) }
+                        runCatching {
+                            reviewLabel(model.effectiveNutrients, model.manualNutrients.keys, model.geminiNutrients.keys)
+                        }
                             .onSuccess { reviewedLabel = it }
                             .onFailure { reviewError = it.message }
                     },
@@ -247,8 +257,9 @@ internal fun OcrScreen(
                     ScanNutrientRow(
                         nutrient = nutrient,
                         values = displayedNutrients[nutrient].orEmpty(),
-                        stable = nutrient in model.stableNutrients,
+                        stable = nutrient in model.stableNutrients && nutrient !in model.geminiNutrients,
                         manual = nutrient in model.manualNutrients,
+                        gemini = nutrient in model.geminiNutrients,
                         onEdit = { editingNutrient = nutrient },
                     )
                     HorizontalDivider()
@@ -258,6 +269,10 @@ internal fun OcrScreen(
                     expanded = geminiExpanded,
                     onToggle = { geminiExpanded = !geminiExpanded },
                 ) {
+                    Button(onClick = {
+                        val clipboard = context.getSystemService(ClipboardManager::class.java)
+                        importResponse(clipboard.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty())
+                    }) { Text(stringResource(R.string.gemini_paste_import)) }
                     OutlinedTextField(
                         value = pastedResponse,
                         onValueChange = {
@@ -273,14 +288,8 @@ internal fun OcrScreen(
                         isError = responseError != null,
                     )
                     responseError?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error) }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = {
-                            val clipboard = context.getSystemService(ClipboardManager::class.java)
-                            importResponse(clipboard.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty())
-                        }) { Text(stringResource(R.string.gemini_paste_import)) }
-                        TextButton(onClick = { importResponse(pastedResponse) }, enabled = pastedResponse.isNotBlank()) {
-                            Text(stringResource(R.string.gemini_import))
-                        }
+                    TextButton(onClick = { importResponse(pastedResponse) }, enabled = pastedResponse.isNotBlank()) {
+                        Text(stringResource(R.string.gemini_import))
                     }
                     TextButton(onClick = {
                         copyGeminiPrompt(context)
@@ -288,6 +297,9 @@ internal fun OcrScreen(
                     }) { Text(stringResource(R.string.gemini_copy_prompt)) }
                     importedNutrition?.let { response ->
                         Text(stringResource(R.string.gemini_unverified), style = MaterialTheme.typography.bodySmall)
+                        if (chooseGeminiColumn) {
+                            Text(stringResource(R.string.gemini_choose_column), style = MaterialTheme.typography.titleSmall)
+                        }
                         SelectionContainer {
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 if (response.columns.all { it.nutrients.isEmpty() }) {
@@ -300,6 +312,16 @@ internal fun OcrScreen(
                                     )
                                     column.nutrients.forEach { nutrient ->
                                         Text("${nutrient.name}: ${nutrient.amount} ${nutrient.unit}")
+                                    }
+                                    if (chooseGeminiColumn) {
+                                        TextButton(onClick = {
+                                            model.importGeminiColumn(column)
+                                            chooseGeminiColumn = false
+                                            Toast.makeText(context, R.string.gemini_values_imported, Toast.LENGTH_SHORT).show()
+                                        }) {
+                                            Icon(Icons.Default.CheckCircle, contentDescription = null)
+                                            Text(stringResource(R.string.gemini_use_column))
+                                        }
                                     }
                                 }
                                 response.uncertain.forEach { Text(it) }
@@ -349,15 +371,18 @@ private fun ScanNutrientRow(
     values: List<NutrientValue>,
     stable: Boolean,
     manual: Boolean,
+    gemini: Boolean,
     onEdit: () -> Unit,
 ) {
     val status = when {
         manual -> R.string.scan_manual
+        values.size > 1 -> R.string.scan_multiple_columns
+        gemini -> R.string.gemini
         stable -> R.string.scan_stable
         values.isEmpty() -> R.string.scan_not_found
-        values.size > 1 -> R.string.scan_multiple_columns
         else -> R.string.scan_collecting
     }
+    val ready = stable || manual || (gemini && values.size == 1)
     Row(
         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(vertical = 4.dp)
             .testTag("scan-${nutrient.name}").semantics(mergeDescendants = true) {},
@@ -366,14 +391,14 @@ private fun ScanNutrientRow(
     ) {
         Icon(
             imageVector = when {
-                stable || manual -> Icons.Default.CheckCircle
+                ready -> Icons.Default.CheckCircle
                 values.isEmpty() -> Icons.Default.Search
                 values.size > 1 -> Icons.Default.Warning
                 else -> Icons.Default.Info
             },
             contentDescription = null,
             modifier = Modifier.size(24.dp),
-            tint = if (stable || manual) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = if (ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(stringResource(nutrient.labelResource()), style = MaterialTheme.typography.bodyMedium)

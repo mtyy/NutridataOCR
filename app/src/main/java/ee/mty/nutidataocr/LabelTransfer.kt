@@ -16,14 +16,22 @@ internal val LABEL_COMPONENTS = linkedMapOf(
     Nutrient.SALT to 84,
 )
 
-internal data class LabelTransfer(val amounts: Map<Int, BigDecimal>, val manualIds: Set<Int>) {
+internal data class LabelTransfer(
+    val amounts: Map<Int, BigDecimal>,
+    val manualIds: Set<Int>,
+    val geminiIds: Set<Int> = emptySet(),
+) {
     fun toJson(): String = JSONObject().apply {
         put("amounts", JSONObject().apply {
             amounts.forEach { (component, amount) -> put(component.toString(), amount) }
         })
         put("sources", JSONObject().apply {
             amounts.keys.forEach { component ->
-                put(component.toString(), if (component in manualIds) "manual" else "confirmed_ocr")
+                put(component.toString(), when (component) {
+                    in manualIds -> "manual"
+                    in geminiIds -> "confirmed_gemini"
+                    else -> "confirmed_ocr"
+                })
             }
         })
     }.toString()
@@ -32,6 +40,7 @@ internal data class LabelTransfer(val amounts: Map<Int, BigDecimal>, val manualI
 internal fun reviewLabel(
     values: Map<Nutrient, List<NutrientValue>>,
     manual: Set<Nutrient>,
+    gemini: Set<Nutrient> = emptySet(),
 ): LabelTransfer {
     val amounts = LABEL_COMPONENTS.map { (nutrient, component) ->
         val value = values[nutrient]?.singleOrNull()
@@ -53,5 +62,9 @@ internal fun reviewLabel(
     require(listOf(3, 42, 2, 84).sumOf { amounts.getValue(it) } <= BigDecimal(100)) {
         "Fat, carbohydrates, protein and salt exceed 100 g per 100 g. Correct the label values."
     }
-    return LabelTransfer(amounts, manual.mapNotNull(LABEL_COMPONENTS::get).toSet())
+    return LabelTransfer(
+        amounts,
+        manual.mapNotNull(LABEL_COMPONENTS::get).toSet(),
+        gemini.mapNotNull(LABEL_COMPONENTS::get).toSet(),
+    )
 }

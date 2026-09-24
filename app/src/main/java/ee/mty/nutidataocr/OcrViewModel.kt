@@ -18,14 +18,37 @@ internal class OcrViewModel : ViewModel() {
         private set
     var manualNutrients by mutableStateOf<Map<Nutrient, NutrientValue>>(emptyMap())
         private set
+    var geminiNutrients by mutableStateOf<Map<Nutrient, List<NutrientValue>>>(emptyMap())
+        private set
     var numericFallback by mutableStateOf(NumericFallbackResult())
         private set
 
     val effectiveNutrients: Map<Nutrient, List<NutrientValue>>
-        get() = nutrients + manualNutrients.mapValues { listOf(it.value) }
+        get() = nutrients + geminiNutrients + manualNutrients.mapValues { listOf(it.value) }
 
     val readyNutrients: Set<Nutrient>
-        get() = stableNutrients + manualNutrients.keys
+        get() = (stableNutrients - geminiNutrients.keys) +
+            geminiNutrients.filterValues { it.size == 1 }.keys + manualNutrients.keys
+
+    fun importGemini(response: GeminiNutrition): Boolean {
+        val column = response.columns.filter {
+            Regex("(?i)(?<![\\d.,])100\\s*g\\b").containsMatchIn(it.basis.orEmpty())
+        }.singleOrNull() ?: response.columns.singleOrNull() ?: return false
+        importGeminiColumn(column)
+        return true
+    }
+
+    fun importGeminiColumn(column: GeminiColumn) {
+        val byName = REQUIRED_SCAN_NUTRIENTS.associateBy { it.name.lowercase() }
+        geminiNutrients = column.nutrients.mapNotNull { entry ->
+            val nutrient = byName[entry.name] ?: return@mapNotNull null
+            val text = entry.amount.trim()
+            val comparison = text.takeWhile { it == '<' || it == '>' }
+            val number = text.removePrefix(comparison).trim().replace(',', '.').toBigDecimal()
+            val grams = if (entry.unit == "mg") number.movePointLeft(3) else number
+            nutrient to NutrientValue(comparison + grams.stripTrailingZeros().toPlainString(), "g")
+        }.groupBy({ it.first }, { it.second }).mapValues { it.value.distinct() }
+    }
 
     fun setManualNutrient(nutrient: Nutrient, input: String): Boolean {
         if (nutrient !in REQUIRED_SCAN_NUTRIENTS || input.length > 64) return false
@@ -40,6 +63,7 @@ internal class OcrViewModel : ViewModel() {
 
     fun useOcr(nutrient: Nutrient) {
         manualNutrients = manualNutrients - nutrient
+        geminiNutrients = geminiNutrients - nutrient
     }
 
     fun manualEntryAmount(nutrient: Nutrient): String {
@@ -70,6 +94,7 @@ internal class OcrViewModel : ViewModel() {
         nutrients = emptyMap()
         stableNutrients = emptySet()
         manualNutrients = emptyMap()
+        geminiNutrients = emptyMap()
         numericFallback = NumericFallbackResult()
     }
 }
