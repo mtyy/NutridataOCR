@@ -30,8 +30,8 @@ Keep automated tests minimal: add them only when needed to move to the next step
 
 ### Gemini App Handoff
 
-- The separate **Gemini** shutter captures a full-resolution JPEG using CameraX's file output, including its rotation metadata. Ordinary photo OCR and live scanning are unchanged.
-- Confirm the external handoff before opening Gemini. Share a temporary cached photo and the default extraction prompt through `ACTION_SEND`, with a narrowly scoped FileProvider URI and temporary read permission. Target `com.google.android.apps.bard`; fall back to the Android chooser if that target is unavailable. No API key or local Nano dependency is required, and minSdk stays 24.
+- The separate **Gemini** shutter copies the extraction prompt to the clipboard immediately on a tap, then captures a full-resolution JPEG using CameraX's file output, including its rotation metadata. Ordinary photo OCR and live scanning are unchanged.
+- Open Gemini directly after capture, without an app confirmation dialog. Share a temporary cached photo and the default extraction prompt through `ACTION_SEND`, with a narrowly scoped FileProvider URI and temporary read permission. Target `com.google.android.apps.bard`; fall back to the Android chooser if that target is unavailable. No API key or local Nano dependency is required, and minSdk stays 24.
 - This is not local-only inference: Gemini may upload the photo. There is no result callback. Some receiving app versions may ignore the text accompanying an image; **Copy prompt** provides a manual fallback.
 - The prompt requests `{"columns":[{"basis":"per 100 g","nutrients":[{"name":"fat","amount":8.2,"unit":"g"}]}],"uncertain":[]}`. Keep printed serving columns, units, comparisons, and uncertainty; do not calculate or guess missing readings.
 - **Paste and import** reads the clipboard only on a tap. A text field and **Import** also accept manually pasted replies. Find the first valid nutrition object within prose or Markdown fences; validate the expected structure, nutrient names, amounts, and units. Malformed replies show an error without replacing the last successful import.

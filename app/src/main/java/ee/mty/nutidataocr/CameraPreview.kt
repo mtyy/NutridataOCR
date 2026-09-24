@@ -397,7 +397,10 @@ internal fun CameraPreview(
                 }
             }
             FilledTonalButton(
-                onClick = { takePhoto?.invoke(true) },
+                onClick = {
+                    copyGeminiPrompt(context)
+                    takePhoto?.invoke(true)
+                },
                 enabled = takePhoto != null && !capturing,
             ) {
                 Icon(

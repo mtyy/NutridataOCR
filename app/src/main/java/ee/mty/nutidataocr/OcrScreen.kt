@@ -1,7 +1,6 @@
 package ee.mty.nutidataocr
 
 import android.Manifest
-import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.pm.PackageManager
 import android.os.SystemClock
@@ -64,13 +63,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import java.io.File
 
 @Composable
 internal fun OcrScreen(model: OcrViewModel, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     var resetAtMillis by rememberSaveable { mutableStateOf(Long.MIN_VALUE) }
-    var pendingPhotoPath by rememberSaveable { mutableStateOf<String?>(null) }
     var pastedResponse by rememberSaveable { mutableStateOf("") }
     var importedResponse by rememberSaveable { mutableStateOf("") }
     var responseError by rememberSaveable { mutableStateOf<Int?>(null) }
@@ -112,32 +109,6 @@ internal fun OcrScreen(model: OcrViewModel, modifier: Modifier = Modifier) {
         }
     }
 
-    pendingPhotoPath?.let { photoPath ->
-        fun dismissPhoto() {
-            File(photoPath).delete()
-            pendingPhotoPath = null
-        }
-        AlertDialog(
-            onDismissRequest = ::dismissPhoto,
-            title = { Text(stringResource(R.string.open_gemini)) },
-            text = { Text(stringResource(R.string.gemini_external_notice)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    try {
-                        openGemini(context, File(photoPath))
-                        pendingPhotoPath = null
-                    } catch (exception: Exception) {
-                        Log.e("GeminiShare", "Could not share photo", exception)
-                        Toast.makeText(context, R.string.gemini_share_failed, Toast.LENGTH_LONG).show()
-                    }
-                }) { Text(stringResource(R.string.open_gemini)) }
-            },
-            dismissButton = {
-                TextButton(onClick = ::dismissPhoto) { Text(stringResource(android.R.string.cancel)) }
-            },
-        )
-    }
-
     editingNutrient?.let { nutrient ->
         ManualNutrientDialog(
             nutrient = nutrient,
@@ -163,8 +134,13 @@ internal fun OcrScreen(model: OcrViewModel, modifier: Modifier = Modifier) {
                     if (capturedAtMillis <= resetAtMillis) {
                         photo.delete()
                     } else {
-                        pendingPhotoPath?.let { File(it).delete() }
-                        pendingPhotoPath = photo.absolutePath
+                        try {
+                            openGemini(context, photo)
+                        } catch (exception: Exception) {
+                            photo.delete()
+                            Log.e("GeminiShare", "Could not share photo", exception)
+                            Toast.makeText(context, R.string.gemini_share_failed, Toast.LENGTH_LONG).show()
+                        }
                     }
                 },
                 modifier = Modifier.fillMaxWidth().weight(0.8f),
@@ -205,8 +181,6 @@ internal fun OcrScreen(model: OcrViewModel, modifier: Modifier = Modifier) {
                     pastedResponse = ""
                     importedResponse = ""
                     responseError = null
-                    pendingPhotoPath?.let { File(it).delete() }
-                    pendingPhotoPath = null
                 }) {
                     Text(stringResource(R.string.new_scan))
                 }
@@ -258,9 +232,7 @@ internal fun OcrScreen(model: OcrViewModel, modifier: Modifier = Modifier) {
                         }
                     }
                     TextButton(onClick = {
-                        context.getSystemService(ClipboardManager::class.java).setPrimaryClip(
-                            ClipData.newPlainText("Nutrition prompt", GEMINI_NUTRITION_PROMPT)
-                        )
+                        copyGeminiPrompt(context)
                         Toast.makeText(context, R.string.gemini_prompt_copied, Toast.LENGTH_SHORT).show()
                     }) { Text(stringResource(R.string.gemini_copy_prompt)) }
                     importedNutrition?.let { response ->

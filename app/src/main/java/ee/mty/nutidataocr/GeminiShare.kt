@@ -2,10 +2,17 @@ package ee.mty.nutidataocr
 
 import android.content.ActivityNotFoundException
 import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.FileProvider
 import java.io.File
+
+internal fun copyGeminiPrompt(context: Context) {
+    context.getSystemService(ClipboardManager::class.java).setPrimaryClip(
+        ClipData.newPlainText("Nutrition prompt", GEMINI_NUTRITION_PROMPT)
+    )
+}
 
 internal fun createGeminiPhotoFile(context: Context): File {
     val directory = File(context.cacheDir, "gemini_photos")
