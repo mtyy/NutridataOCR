@@ -10,8 +10,10 @@ kotlin = "2.2.10"
 composeBom = "2026.02.01"
 cameraX = "1.5.0"
 mlkitTextRecognition = "16.0.1"
+json = "20240303"
 
 [libraries]
+json = { group = "org.json", name = "json", version.ref = "json" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }

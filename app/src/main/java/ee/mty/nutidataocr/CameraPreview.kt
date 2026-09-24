@@ -42,6 +42,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text as ComposeText
 import androidx.compose.material3.TextButton
@@ -67,6 +68,7 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import java.io.File
 import kotlin.math.hypot
 
 @androidx.annotation.OptIn(ExperimentalGetImage::class, ExperimentalCamera2Interop::class)
@@ -74,6 +76,7 @@ import kotlin.math.hypot
 @Composable
 internal fun CameraPreview(
     onTextRecognized: (List<OcrLine>, Long, Boolean) -> Unit,
+    onGeminiPhoto: (File, Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -84,10 +87,11 @@ internal fun CameraPreview(
         }
     }
     val latestOnTextRecognized by rememberUpdatedState(onTextRecognized)
+    val latestOnGeminiPhoto by rememberUpdatedState(onGeminiPhoto)
     var rearCameras by remember { mutableStateOf(emptyList<RearCamera>()) }
     var selectedCameraId by rememberSaveable { mutableStateOf<String?>(null) }
     var cameraMenuExpanded by remember { mutableStateOf(false) }
-    var takePhoto by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var takePhoto by remember { mutableStateOf<((Boolean) -> Unit)?>(null) }
     var capturing by remember { mutableStateOf(false) }
     val physicalCameraId = rearCameras.firstOrNull { it.id == selectedCameraId }?.selector?.physicalCameraId
 
@@ -257,15 +261,42 @@ internal fun CameraPreview(
                     )
                     boundCameraInfo = camera.cameraInfo
                     camera.cameraInfo.cameraState.observe(lifecycleOwner, cameraStateObserver)
-                    takePhoto = {
+                    takePhoto = { forGemini ->
                         if (!disposed && !capturePending) {
                             capturePending = true
                             capturing = true
                             val capturedAtMillis = SystemClock.elapsedRealtime()
                             val capture = {
                                 imageCapture.targetRotation = previewView.display?.rotation ?: rotation
+                                var shareFile: File? = null
                                 try {
-                                    imageCapture.takePicture(mainExecutor, object : ImageCapture.OnImageCapturedCallback() {
+                                    if (forGemini) {
+                                        val photo = createGeminiPhotoFile(context)
+                                        shareFile = photo
+                                        imageCapture.takePicture(
+                                            ImageCapture.OutputFileOptions.Builder(photo).build(),
+                                            mainExecutor,
+                                            object : ImageCapture.OnImageSavedCallback {
+                                                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                                                    capturePending = false
+                                                    if (disposed) {
+                                                        photo.delete()
+                                                    } else {
+                                                        capturing = false
+                                                        latestOnGeminiPhoto(photo, capturedAtMillis)
+                                                    }
+                                                }
+
+                                                override fun onError(exception: ImageCaptureException) {
+                                                    photo.delete()
+                                                    capturePending = false
+                                                    if (!disposed) capturing = false
+                                                    Log.e("CameraOcr", "Could not save Gemini photo", exception)
+                                                    showPhotoFailure()
+                                                }
+                                            },
+                                        )
+                                    } else imageCapture.takePicture(mainExecutor, object : ImageCapture.OnImageCapturedCallback() {
                                         override fun onCaptureSuccess(image: ImageProxy) {
                                             if (disposed) {
                                                 image.close()
@@ -283,6 +314,7 @@ internal fun CameraPreview(
                                         }
                                     })
                                 } catch (exception: Exception) {
+                                    shareFile?.delete()
                                     capturePending = false
                                     capturing = false
                                     Log.e("CameraOcr", "Could not start photo capture", exception)
@@ -350,7 +382,7 @@ internal fun CameraPreview(
                 Spacer(Modifier.weight(1f))
             }
             FilledIconButton(
-                onClick = { takePhoto?.invoke() },
+                onClick = { takePhoto?.invoke(false) },
                 enabled = takePhoto != null && !capturing,
                 modifier = Modifier.size(56.dp),
             ) {
@@ -363,6 +395,17 @@ internal fun CameraPreview(
                         modifier = Modifier.size(24.dp),
                     )
                 }
+            }
+            FilledTonalButton(
+                onClick = { takePhoto?.invoke(true) },
+                enabled = takePhoto != null && !capturing,
+            ) {
+                Icon(
+                    painter = painterResource(android.R.drawable.ic_menu_share),
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                )
+                ComposeText(stringResource(R.string.gemini), modifier = Modifier.padding(start = 4.dp))
             }
         }
     }

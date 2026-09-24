@@ -18,6 +18,16 @@ Keep automated tests minimal: add them only when needed to move to the next step
 - Bind preview, analysis, and still capture together; explicitly route all three outputs to the selected physical lens. CameraX negotiates supported resolutions for that combination. Switching rear lens preserves accumulated results.
 - **New scan** clears both pipelines and rejects results from photos requested before the reset. Higher resolution may improve small-text recognition, but focus, motion, glare, and label curvature still affect accuracy; verify on real labels.
 
+### Gemini App Handoff
+
+- The separate **Gemini** shutter captures a full-resolution JPEG using CameraX's file output, including its rotation metadata. Ordinary photo OCR and live scanning are unchanged.
+- Confirm the external handoff before opening Gemini. Share a temporary cached photo and the default extraction prompt through `ACTION_SEND`, with a narrowly scoped FileProvider URI and temporary read permission. Target `com.google.android.apps.bard`; fall back to the Android chooser if that target is unavailable. No API key or local Nano dependency is required, and minSdk stays 24.
+- This is not local-only inference: Gemini may upload the photo. There is no result callback. Some receiving app versions may ignore the text accompanying an image; **Copy prompt** provides a manual fallback.
+- The prompt requests `{"columns":[{"basis":"per 100 g","nutrients":[{"name":"fat","amount":8.2,"unit":"g"}]}],"uncertain":[]}`. Keep printed serving columns, units, comparisons, and uncertainty; do not calculate or guess missing readings.
+- **Paste and import** reads the clipboard only on a tap. A text field and **Import** also accept manually pasted replies. Find the first valid nutrition object within prose or Markdown fences; validate the expected structure, nutrient names, amounts, and units. Malformed replies show an error without replacing the last successful import.
+- Imported values remain visibly unverified and separate from both OCR pipelines. Pasted and imported replies survive activity recreation. **New scan** clears them and rejects pending photos from before the reset.
+- Cancelled or failed captures are deleted. Shared photos remain available while the receiving app reads them; later captures remove cached files older than 24 hours. They are not saved to the gallery.
+
 ### Stateful Scanning
 
 - Retain each nutrient as the camera moves around the product, even when that field leaves view or becomes unreadable.
