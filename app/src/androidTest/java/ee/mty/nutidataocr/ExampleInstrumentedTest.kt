@@ -5,13 +5,22 @@ import android.content.ClipboardManager
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.SystemClock
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.core.content.FileProvider
+import androidx.lifecycle.ViewModelProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
 
@@ -67,6 +76,77 @@ class ExampleInstrumentedTest {
     }
 
     @Test
+    fun checklistShowsStableFieldsAndDiagnosticsStayCollapsedUntilRequested() {
+        compose.onNodeWithText("0 / 6 fields ready").assertIsDisplayed()
+        compose.onNodeWithText("Raw text").assertDoesNotExist()
+        compose.onNodeWithText("Pasted reply").assertDoesNotExist()
+        REQUIRED_SCAN_NUTRIENTS.forEach { nutrient ->
+            compose.onNodeWithTag("scan-${nutrient.name}").assertTextContains("Not found")
+        }
+        compose.runOnUiThread {
+            val model = ViewModelProvider(compose.activity)[OcrViewModel::class.java]
+            val timestamp = SystemClock.elapsedRealtime()
+            val lines = listOf("Fat 8 g", "Saturates 2 g", "Carbohydrates 12 g", "Sugars 0 g", "Protein 6 g", "Salt 0.5 g")
+                .map { OcrLine(it, confidence = 0.95f) }
+            repeat(3) { index -> model.onTextRecognized(lines, timestamp + index * 300L) }
+        }
+        compose.onNodeWithText("All 6 fields ready").assertIsDisplayed()
+        REQUIRED_SCAN_NUTRIENTS.forEach { nutrient ->
+            compose.onNodeWithTag("scan-${nutrient.name}").assertTextContains("Stable")
+                .assert(SemanticsMatcher.keyNotDefined(SemanticsActions.OnClick))
+        }
+        compose.activityRule.scenario.recreate()
+        compose.onNodeWithText("All 6 fields ready").assertIsDisplayed()
+        compose.onNodeWithText("Scan diagnostics").performScrollTo()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Collapsed"))
+            .performClick()
+        compose.onNodeWithText("Raw text").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Scan diagnostics").performScrollTo().performClick()
+        compose.onNodeWithText("Raw text").assertDoesNotExist()
+        compose.onNodeWithText("New scan").performClick()
+        compose.onNodeWithText("0 / 6 fields ready").assertIsDisplayed()
+        compose.onNodeWithText("All 6 fields ready").assertDoesNotExist()
+    }
+
+    @Test
+    fun manualValueCanBeEditedCancelledRestoredToOcrAndReset() {
+        compose.onNodeWithContentDescription("Edit Salt").performScrollTo().performClick()
+        compose.onNodeWithText("Amount (g)").performTextReplacement("0,75")
+        compose.activityRule.scenario.recreate()
+        compose.onNodeWithText("Amount (g)").assertTextContains("0,75")
+        compose.onNodeWithText("Save value").performClick()
+        compose.onNodeWithTag("scan-SALT").assertTextContains("0.75 g").assertTextContains("Manual")
+        compose.onNodeWithText("1 / 6 fields ready").assertIsDisplayed()
+
+        compose.runOnUiThread {
+            val model = ViewModelProvider(compose.activity)[OcrViewModel::class.java]
+            val timestamp = SystemClock.elapsedRealtime()
+            repeat(3) { index ->
+                model.onTextRecognized(listOf(OcrLine("Salt 1 g", confidence = 0.95f)), timestamp + index * 300L)
+            }
+        }
+        compose.onNodeWithTag("scan-SALT").assertTextContains("0.75 g")
+        compose.activityRule.scenario.recreate()
+        compose.onNodeWithTag("scan-SALT").assertTextContains("0.75 g").assertTextContains("Manual")
+        compose.onNodeWithContentDescription("Edit Salt").performScrollTo().performClick()
+        compose.onNodeWithText("Amount (g)").performTextReplacement("-1")
+        compose.onNodeWithText("Save value").performClick()
+        compose.onNodeWithText(compose.activity.getString(R.string.scan_invalid_amount)).assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithTag("scan-SALT").assertTextContains("0.75 g")
+        compose.onNodeWithContentDescription("Edit Salt").performScrollTo().performClick()
+        compose.onNodeWithText("Clear").performClick()
+        compose.onNodeWithTag("scan-SALT").assertTextContains("1 g").assertTextContains("Stable")
+        compose.onNodeWithContentDescription("Edit Salt").performScrollTo().performClick()
+        compose.onNodeWithText("Amount (g)").performTextReplacement("0")
+        compose.onNodeWithText("Save value").performClick()
+        compose.onNodeWithTag("scan-SALT").assertTextContains("0 g").assertTextContains("Manual")
+        compose.onNodeWithText("New scan").performClick()
+        compose.onNodeWithTag("scan-SALT").assertTextContains("Not found")
+        compose.onNodeWithText("0 / 6 fields ready").assertIsDisplayed()
+    }
+
+    @Test
     fun pastedConversationImportsSurvivesRecreationAndResets() {
         compose.runOnUiThread {
             compose.activity.getSystemService(ClipboardManager::class.java).setPrimaryClip(
@@ -79,6 +159,7 @@ class ExampleInstrumentedTest {
                 """.trimIndent())
             )
         }
+        compose.onNodeWithText("Gemini response").performScrollTo().performClick()
         compose.onNodeWithText("Paste and import").performScrollTo().performClick()
         compose.onNodeWithText("fat: <0.5 g").performScrollTo().assertIsDisplayed()
         compose.activityRule.scenario.recreate()
@@ -88,7 +169,7 @@ class ExampleInstrumentedTest {
         compose.onNodeWithText(compose.activity.getString(R.string.gemini_invalid_response))
             .performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("fat: <0.5 g").assertExists()
-        compose.onNodeWithText("New scan").performScrollTo().performClick()
+        compose.onNodeWithText("New scan").performClick()
         compose.onNodeWithText("fat: <0.5 g").assertDoesNotExist()
     }
 }

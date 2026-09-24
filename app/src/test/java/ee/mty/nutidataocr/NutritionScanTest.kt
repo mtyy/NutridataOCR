@@ -1,10 +1,125 @@
 package ee.mty.nutidataocr
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NutritionScanTest {
+    @Test
+    fun manualMissingValueCompletesTheChecklistWithoutBecomingAnOcrReading() {
+        val model = OcrViewModel()
+        val lines = listOf("Fat 8 g", "Saturates 2 g", "Carbohydrates 12 g", "Sugars 0 g", "Protein 6 g")
+            .map { OcrLine(it, confidence = 0.95f) }
+        repeat(3) { index -> model.onTextRecognized(lines, 1_000 + index * 300L) }
+        assertEquals(5, model.readyNutrients.size)
+        assertTrue(model.setManualNutrient(Nutrient.SALT, " 0,50 "))
+        assertEquals(REQUIRED_SCAN_NUTRIENTS.toSet(), model.readyNutrients)
+        assertEquals(listOf(NutrientValue("0.5", "g")), model.effectiveNutrients[Nutrient.SALT])
+        assertFalse(Nutrient.SALT in model.stableNutrients)
+        assertFalse(Nutrient.SALT in model.nutrients)
+        model.useOcr(Nutrient.SALT)
+        assertEquals(5, model.readyNutrients.size)
+        assertFalse(Nutrient.SALT in model.effectiveNutrients)
+    }
+
+    @Test
+    fun scanningNeverOverwritesManualValuesAndResetClearsOverrides() {
+        val model = OcrViewModel()
+        assertTrue(model.setManualNutrient(Nutrient.FAT, "0"))
+        repeat(4) { index ->
+            model.onTextRecognized(listOf(OcrLine("Fat 8 g", confidence = 0.95f)), 1_000 + index * 300L)
+        }
+        assertEquals(listOf(NutrientValue("0", "g")), model.effectiveNutrients[Nutrient.FAT])
+        assertEquals(listOf(NutrientValue("8", "g")), model.nutrients[Nutrient.FAT])
+        model.useOcr(Nutrient.FAT)
+        assertEquals(listOf(NutrientValue("8", "g")), model.effectiveNutrients[Nutrient.FAT])
+        assertTrue(model.setManualNutrient(Nutrient.SALT, "< 0,5"))
+        assertEquals(NutrientValue("<0.5", "g"), model.manualNutrients[Nutrient.SALT])
+        model.reset(3_000)
+        assertTrue(model.manualNutrients.isEmpty())
+        assertTrue(model.readyNutrients.isEmpty())
+    }
+
+    @Test
+    fun manualEntryNormalizesUnitsAndRejectsInvalidValuesWithoutLosingTheOverride() {
+        val model = OcrViewModel()
+        model.onTextRecognized(listOf(OcrLine("Salt 500 mg", confidence = 0.95f)), 1_000)
+        assertEquals("0.5", model.manualEntryAmount(Nutrient.SALT))
+        model.onTextRecognized(listOf(OcrLine("Protein 12 g 6 g", confidence = 0.95f)), 1_300)
+        assertEquals("", model.manualEntryAmount(Nutrient.PROTEIN))
+        assertTrue(model.setManualNutrient(Nutrient.SALT, ".75"))
+        listOf("", "-1", "NaN", "Infinity", "1e3", "1,2,3", "2 g", "0.", "9".repeat(65)).forEach { input ->
+            assertFalse(input, model.setManualNutrient(Nutrient.SALT, input))
+            assertEquals(NutrientValue("0.75", "g"), model.manualNutrients[Nutrient.SALT])
+        }
+        assertFalse(model.setManualNutrient(Nutrient.ENERGY_KCAL, "100"))
+        assertEquals("0.75", model.manualEntryAmount(Nutrient.SALT))
+    }
+
+    @Test
+    fun stabilityNeedsThreeClearIndependentReadings() {
+        val scan = NutritionScan()
+        val reading = listOf(OcrLine("Fat 8.0 g", confidence = 0.95f))
+        scan.observe(reading, 1_000)
+        scan.observe(reading, 1_100)
+        scan.observe(reading, 1_300)
+        assertTrue(scan.stableNutrients.isEmpty())
+        scan.observe(listOf(OcrLine("Fat 8.00 g", confidence = 0.95f)), 1_400, isPhoto = true)
+        assertEquals(setOf(Nutrient.FAT), scan.stableNutrients)
+        scan.observe(emptyList(), 60_000)
+        assertEquals(setOf(Nutrient.FAT), scan.stableNutrients)
+
+        scan.reset(61_000)
+        scan.observe(reading, 61_100, isPhoto = true)
+        repeat(5) { scan.observe(reading, 61_100, isPhoto = true) }
+        assertTrue(scan.stableNutrients.isEmpty())
+    }
+
+    @Test
+    fun lowConfidenceAndMultipleColumnsNeverCountAsStable() {
+        val scan = NutritionScan()
+        repeat(12) { index ->
+            scan.observe(listOf(
+                OcrLine("Fat 8 g", confidence = 0.84f, textHeightPx = 100f),
+                OcrLine("Protein 12 g 6 g", confidence = 0.99f),
+                OcrLine("Salt 1 g", confidence = Float.NaN),
+            ), index * 300L)
+        }
+        assertEquals(3, scan.nutrients.size)
+        assertTrue(scan.stableNutrients.isEmpty())
+    }
+
+    @Test
+    fun conflictingReadingsWithdrawStabilityUntilAValueSettlesAgain() {
+        val scan = NutritionScan()
+        repeat(3) { index ->
+            scan.observe(listOf(OcrLine("Fat 8 g", confidence = 0.95f)), index * 300L)
+        }
+        assertEquals(setOf(Nutrient.FAT), scan.stableNutrients)
+        repeat(2) { index ->
+            scan.observe(listOf(OcrLine("Fat 9 g", confidence = 0.95f)), 900 + index * 300L)
+        }
+        assertTrue(scan.stableNutrients.isEmpty())
+        repeat(6) { index ->
+            scan.observe(listOf(OcrLine("Fat 9 g", confidence = 0.95f)), 1_500 + index * 300L)
+        }
+        assertEquals(listOf(NutrientValue("9", "g")), scan.nutrients[Nutrient.FAT])
+        assertEquals(setOf(Nutrient.FAT), scan.stableNutrients)
+    }
+
+    @Test
+    fun modelCollectsAllSixRequiredFieldsIncludingZeroAndResetClearsReadiness() {
+        val model = OcrViewModel()
+        val lines = listOf("Fat 8 g", "Saturates 2 g", "Carbohydrates 12 g", "Sugars 0 g", "Protein 6 g", "Salt 0.5 g")
+            .map { OcrLine(it, confidence = 0.95f) }
+        repeat(3) { index -> model.onTextRecognized(lines, 1_000 + index * 300L) }
+        assertEquals(REQUIRED_SCAN_NUTRIENTS.toSet(), model.stableNutrients)
+        model.reset(2_000)
+        model.onTextRecognized(lines, 1_900, isPhoto = true)
+        assertTrue(model.stableNutrients.isEmpty())
+    }
+
     @Test
     fun liveFramesAndPhotosAccumulateThroughBothPipelinesAndResetRejectsLateResults() {
         val model = OcrViewModel()

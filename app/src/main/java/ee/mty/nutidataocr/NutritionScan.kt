@@ -11,9 +11,19 @@ internal data class OcrLine(
     val tokens: List<OcrToken> = emptyList(),
 )
 
+internal val REQUIRED_SCAN_NUTRIENTS = listOf(
+    Nutrient.FAT,
+    Nutrient.SATURATES,
+    Nutrient.CARBOHYDRATES,
+    Nutrient.SUGARS,
+    Nutrient.PROTEIN,
+    Nutrient.SALT,
+)
+
 internal class NutritionScan {
     private data class Sample(
         val values: List<NutrientValue>,
+        val confidence: Float,
         val weight: Double,
         val timestampMillis: Long,
     )
@@ -24,6 +34,24 @@ internal class NutritionScan {
 
     val nutrients: Map<Nutrient, List<NutrientValue>>
         get() = selected.toSortedMap()
+
+    val stableNutrients: Set<Nutrient>
+        get() = selected.keys.filterTo(mutableSetOf()) { nutrient ->
+            val values = selected.getValue(nutrient)
+            val samples = history.getValue(nutrient)
+            val clearMatches = samples.count {
+                it.values == values && it.confidence >= MIN_STABLE_CONFIDENCE
+            }
+            var matchingWeight = 0.0
+            var totalWeight = 0.0
+            samples.reversed().forEachIndexed { age, observation ->
+                val weight = observation.weight * RECENCY_WEIGHT.pow(age)
+                totalWeight += weight
+                if (observation.values == values) matchingWeight += weight
+            }
+            values.size == 1 && clearMatches >= MIN_STABLE_SAMPLES &&
+                matchingWeight >= totalWeight * MIN_STABLE_AGREEMENT
+        }
 
     fun observe(
         lines: List<OcrLine>,
@@ -38,7 +66,7 @@ internal class NutritionScan {
                 ?.let { (it / 24f).coerceIn(0.5f, 1.5f) } ?: 1f
             val weight = (0.25 + 0.75 * confidence) * sizeWeight
             for ((nutrient, values) in parseNutrition(line.text)) {
-                val sample = Sample(values.map { it.normalized() }, weight, timestampMillis)
+                val sample = Sample(values.map { it.normalized() }, confidence, weight, timestampMillis)
                 if (weight > (frameSamples[nutrient]?.weight ?: 0.0)) {
                     frameSamples[nutrient] = sample
                 }
@@ -93,5 +121,8 @@ internal class NutritionScan {
         const val RECENCY_WEIGHT = 0.85
         const val SWITCH_MARGIN = 1.25
         const val MIN_CHALLENGER_SAMPLES = 2
+        const val MIN_STABLE_CONFIDENCE = 0.85f
+        const val MIN_STABLE_SAMPLES = 3
+        const val MIN_STABLE_AGREEMENT = 0.75
     }
 }
