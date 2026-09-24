@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -36,6 +38,7 @@ internal fun OcrScreen(modifier: Modifier = Modifier) {
         )
     }
     var recognizedText by remember { mutableStateOf("") }
+    val nutrients = remember(recognizedText) { parseNutrition(recognizedText) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { permissionGranted = it }
@@ -63,10 +66,32 @@ internal fun OcrScreen(modifier: Modifier = Modifier) {
             onTextRecognized = { recognizedText = it },
             modifier = Modifier.fillMaxWidth().weight(1f),
         )
-        Text(
-            text = recognizedText,
+        Column(
             modifier = Modifier.fillMaxWidth().weight(1f)
                 .verticalScroll(rememberScrollState()).padding(16.dp),
-        )
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(stringResource(R.string.nutrients), style = MaterialTheme.typography.titleSmall)
+            if (nutrients.isEmpty()) {
+                Text(stringResource(R.string.no_nutrients_detected))
+            }
+            nutrients.forEach { (nutrient, values) ->
+                val label = stringResource(
+                    when (nutrient) {
+                        Nutrient.ENERGY_KJ, Nutrient.ENERGY_KCAL -> R.string.energy
+                        Nutrient.FAT -> R.string.fat
+                        Nutrient.SATURATES -> R.string.saturates
+                        Nutrient.CARBOHYDRATES -> R.string.carbohydrates
+                        Nutrient.SUGARS -> R.string.sugars
+                        Nutrient.FIBRE -> R.string.fibre
+                        Nutrient.PROTEIN -> R.string.protein
+                        Nutrient.SALT -> R.string.salt
+                    }
+                )
+                Text("$label: ${values.joinToString(" / ") { "${it.amount} ${it.unit}" }}")
+            }
+            Text(stringResource(R.string.raw_text), style = MaterialTheme.typography.titleSmall)
+            Text(recognizedText)
+        }
     }
 }
