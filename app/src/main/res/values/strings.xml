@@ -1,6 +1,10 @@
 <resources>
     <string name="app_name">Nutidata OCR</string>
     <string name="allow_camera">Allow camera</string>
+    <string name="rear_camera">Rear camera %1$s</string>
+    <string name="rear_camera_auto">Rear camera %1$s (auto)</string>
+    <string name="rear_camera_focal_length">Rear camera %1$s (%2$.1f mm)</string>
+    <string name="camera_switch_failed">Could not open that lens</string>
     <string name="nutrients">Nutrients</string>
     <string name="new_scan">New scan</string>
     <string name="no_nutrients_detected">No nutrients detected</string>
