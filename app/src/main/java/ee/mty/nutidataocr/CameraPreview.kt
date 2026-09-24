@@ -1,5 +1,6 @@
 package ee.mty.nutidataocr
 
+import android.os.SystemClock
 import android.util.Log
 import android.view.Surface
 import androidx.camera.core.CameraSelector
@@ -19,13 +20,15 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import kotlin.math.hypot
 
 @androidx.annotation.OptIn(ExperimentalGetImage::class)
 @Composable
 internal fun CameraPreview(
-    onTextRecognized: (String) -> Unit,
+    onTextRecognized: (List<OcrLine>, Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -64,6 +67,7 @@ internal fun CameraPreview(
                 return@setAnalyzer
             }
             processing = true
+            val capturedAtMillis = SystemClock.elapsedRealtime()
             try {
                 recognizer.process(InputImage.fromMediaImage(image, frame.imageInfo.rotationDegrees))
                     .addOnCompleteListener(mainExecutor) { task ->
@@ -72,7 +76,20 @@ internal fun CameraPreview(
                         if (disposed) {
                             recognizer.close()
                         } else if (task.isSuccessful) {
-                            latestOnTextRecognized(task.result.text)
+                            val lines = task.result.textBlocks.flatMap { it.lines }.map { line ->
+                                val numbers = line.elements.filter { element ->
+                                    element.text.any { it.isDigit() }
+                                }
+                                OcrLine(
+                                    text = line.text,
+                                    confidence = minOf(
+                                        line.confidence,
+                                        numbers.minOfOrNull { it.confidence } ?: line.confidence,
+                                    ),
+                                    textHeightPx = numbers.minOfOrNull { it.textHeightPx() } ?: 24f,
+                                )
+                            }
+                            latestOnTextRecognized(lines, capturedAtMillis)
                         } else {
                             Log.e("CameraOcr", "Text recognition failed", task.exception)
                         }
@@ -107,4 +124,13 @@ internal fun CameraPreview(
     }
 
     AndroidView(factory = { previewView }, modifier = modifier)
+}
+
+private fun Text.Element.textHeightPx(): Float {
+    val corners = cornerPoints
+    if (corners == null || corners.size != 4) return boundingBox?.height()?.toFloat() ?: 24f
+    return minOf(
+        hypot((corners[3].x - corners[0].x).toFloat(), (corners[3].y - corners[0].y).toFloat()),
+        hypot((corners[2].x - corners[1].x).toFloat(), (corners[2].y - corners[1].y).toFloat()),
+    )
 }

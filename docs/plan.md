@@ -6,9 +6,17 @@ Create an Android app that lets users log in to [tap.nutridata.ee](https://tap.n
 
 ## Prototype Stage
 
-This is a prototype. The current step is only a Compose screen with a live camera preview and raw text read by on-device OCR. No nutrition parsing, extra controls, login, WebView integration, or saving products in this step.
+This is a prototype: a Compose camera screen with raw OCR text and live nutrient extraction for English, Estonian, Latvian, Finnish, Lithuanian, German, and Polish. Russian is deferred. Login, WebView integration, and saving products are not implemented yet.
 
 Keep automated tests minimal: add them only when needed to move to the next step. Use a build check for compilation and rely on the user to verify camera behavior and OCR accuracy with real labels on an Android device.
+
+### Stateful Scanning
+
+- Retain each nutrient as the camera moves around the product, even when that field leaves view or becomes unreadable.
+- Keep up to 12 observations per nutrient, accepting at most one every 300 ms. Recent observations, ML Kit confidence, and larger numeric text receive more weight. Text size is only a bounded quality hint, not proof that zoom improved accuracy.
+- Show the first reading immediately. Replace it only when another value has at least two supporting observations and a weighted score more than 25% higher. Normalize equivalent decimal formatting, such as `8` and `8.0`.
+- Keep the session through rotation, but not process death. Use **New scan** when moving to another product; it clears the history and rejects already-processing frames from before the reset.
+- Results remain heuristic. Parsing still needs names and values on the same OCR line; multiple values stay grouped, without matching serving columns across views or assuming a per-100-g basis.
 
 ## Proposed Approach
 

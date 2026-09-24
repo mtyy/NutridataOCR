@@ -2,11 +2,13 @@ package ee.mty.nutidataocr
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.SystemClock
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -15,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -29,7 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 
 @Composable
-internal fun OcrScreen(modifier: Modifier = Modifier) {
+internal fun OcrScreen(model: OcrViewModel, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     var permissionGranted by remember {
         mutableStateOf(
@@ -37,8 +40,7 @@ internal fun OcrScreen(modifier: Modifier = Modifier) {
                 PackageManager.PERMISSION_GRANTED
         )
     }
-    var recognizedText by remember { mutableStateOf("") }
-    val nutrients = remember(recognizedText) { parseNutrition(recognizedText) }
+    val nutrients = model.nutrients
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { permissionGranted = it }
@@ -63,7 +65,7 @@ internal fun OcrScreen(modifier: Modifier = Modifier) {
 
     Column(modifier = modifier.fillMaxSize()) {
         CameraPreview(
-            onTextRecognized = { recognizedText = it },
+            onTextRecognized = model::onTextRecognized,
             modifier = Modifier.fillMaxWidth().weight(1f),
         )
         Column(
@@ -71,7 +73,16 @@ internal fun OcrScreen(modifier: Modifier = Modifier) {
                 .verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(stringResource(R.string.nutrients), style = MaterialTheme.typography.titleSmall)
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(R.string.nutrients),
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                TextButton(onClick = { model.reset(SystemClock.elapsedRealtime()) }) {
+                    Text(stringResource(R.string.new_scan))
+                }
+            }
             if (nutrients.isEmpty()) {
                 Text(stringResource(R.string.no_nutrients_detected))
             }
@@ -91,7 +102,7 @@ internal fun OcrScreen(modifier: Modifier = Modifier) {
                 Text("$label: ${values.joinToString(" / ") { "${it.amount} ${it.unit}" }}")
             }
             Text(stringResource(R.string.raw_text), style = MaterialTheme.typography.titleSmall)
-            Text(recognizedText)
+            Text(model.recognizedText)
         }
     }
 }

@@ -2,6 +2,7 @@
     <string name="app_name">Nutidata OCR</string>
     <string name="allow_camera">Allow camera</string>
     <string name="nutrients">Nutrients</string>
+    <string name="new_scan">New scan</string>
     <string name="no_nutrients_detected">No nutrients detected</string>
     <string name="energy">Energy</string>
     <string name="fat">Fat</string>
