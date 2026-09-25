@@ -67,6 +67,7 @@ class MainActivity : ComponentActivity() {
     private var transferBusy by mutableStateOf(false)
     private var transferMessage by mutableStateOf<String?>(null)
     private val draftScript by lazy { assets.open("nutridata-draft.js").bufferedReader().use { it.readText() } }
+    private val searchScript by lazy { assets.open("nutridata-search.js").bufferedReader().use { it.readText() } }
     private val scanner = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == RESULT_OK) {
             val token = result.data?.getStringExtra(DRAFT_TOKEN_EXTRA)
@@ -237,6 +238,7 @@ class MainActivity : ComponentActivity() {
 
             override fun onPageFinished(view: WebView, url: String?) {
                 canGoBack = view.canGoBack()
+                view.evaluateJavascript(searchScript, null)
             }
 
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
