@@ -7,6 +7,21 @@ import org.junit.Test
 
 class NutritionScanTest {
     @Test
+    fun unidentifiedSuggestionsNormalizeUnitsAndExcludeAssignedOrNonNutrientValues() {
+        val model = OcrViewModel()
+        model.setManualNutrient(Nutrient.SALT, "0.25")
+        model.importGeminiColumn(GeminiColumn("per 100 g", listOf(GeminiNutrient("protein", "6", "g"))))
+        val tokens = listOf("8g", "250mg", "6g", "500mg", "0,50g", "12", "0g", "200kcal", "840kJ", "150g", "10%")
+            .map { OcrToken(it, 0.99f) } + OcrToken("9g", 0.4f)
+        model.onTextRecognized(listOf(OcrLine("Fat 8 g"), OcrLine("", tokens = tokens)), 1000)
+        assertEquals(listOf("0.5", "12", "0"), model.unidentifiedAmounts)
+        model.setManualNutrient(Nutrient.SUGARS, "0.5")
+        assertEquals(listOf("12", "0"), model.unidentifiedAmounts)
+        model.reset(2000)
+        assertTrue(model.unidentifiedAmounts.isEmpty())
+    }
+
+    @Test
     fun estonianSaturatedFatVariantsBecomeReadyWithoutReplacingTotalFat() {
         listOf(
             "k\u00fcllastunud rasvhapped",

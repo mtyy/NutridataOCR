@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
+import java.math.BigDecimal
 
 internal class OcrViewModel : ViewModel() {
     private val scan = NutritionScan()
@@ -29,6 +30,25 @@ internal class OcrViewModel : ViewModel() {
     val readyNutrients: Set<Nutrient>
         get() = (stableNutrients - geminiNutrients.keys) +
             geminiNutrients.filterValues { it.size == 1 }.keys + manualNutrients.keys
+
+    val unidentifiedAmounts: List<String>
+        get() {
+            val assigned = (nutrients.values.flatten() + effectiveNutrients.values.flatten())
+                .mapNotNull(::suggestionAmount).toSet()
+            return numericFallback.numbers.mapNotNull { suggestionAmount(it.number) }
+                .filterNot { it in assigned }.distinct()
+        }
+
+    private fun suggestionAmount(value: NutrientValue): String? {
+        val number = value.amount.replace(',', '.').toBigDecimalOrNull() ?: return null
+        val grams = when (value.unit) {
+            "", "g" -> number
+            "mg" -> number.movePointLeft(3)
+            else -> return null
+        }
+        return grams.takeIf { it >= BigDecimal.ZERO && it <= BigDecimal(100) }
+            ?.stripTrailingZeros()?.toPlainString()
+    }
 
     fun importGemini(response: GeminiNutrition): Boolean {
         val column = response.columns.filter {

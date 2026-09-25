@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.SystemClock
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
@@ -110,12 +111,24 @@ class ExampleInstrumentedTest {
 
     @Test
     fun manualValueCanBeEditedCancelledRestoredToOcrAndReset() {
-        compose.onNodeWithContentDescription("Edit Salt").performScrollTo().performClick()
+        compose.runOnUiThread {
+            val model = ViewModelProvider(compose.activity)[OcrViewModel::class.java]
+            model.onTextRecognized(listOf(OcrLine("750 mg", tokens = listOf(OcrToken("750mg", 0.99f)))),
+                SystemClock.elapsedRealtime())
+        }
+        compose.onNodeWithContentDescription("Edit Salt").performScrollTo().assertTextContains("-")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button)).performClick()
+        compose.onNodeWithText("0.75 g").performScrollTo().performClick()
+        compose.onNodeWithText("Amount (g)").assertTextContains("0.75")
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithContentDescription("Edit Salt").assertTextContains("-").performClick()
+        compose.onNodeWithText("0.75 g").performScrollTo().performClick()
         compose.onNodeWithText("Amount (g)").performTextReplacement("0,75")
         compose.activityRule.scenario.recreate()
         compose.onNodeWithText("Amount (g)").assertTextContains("0,75")
         compose.onNodeWithText("Save value").performClick()
-        compose.onNodeWithTag("scan-SALT").assertTextContains("0.75 g").assertTextContains("Manual")
+        compose.onNodeWithContentDescription("Edit Salt").assertTextContains("0.75 g")
+        compose.onNodeWithTag("scan-SALT").assertTextContains("Manual")
         compose.onNodeWithText("1 / 6 fields ready").assertIsDisplayed()
 
         compose.runOnUiThread {
@@ -125,22 +138,25 @@ class ExampleInstrumentedTest {
                 model.onTextRecognized(listOf(OcrLine("Salt 1 g", confidence = 0.95f)), timestamp + index * 300L)
             }
         }
-        compose.onNodeWithTag("scan-SALT").assertTextContains("0.75 g")
+        compose.onNodeWithContentDescription("Edit Salt").assertTextContains("0.75 g")
         compose.activityRule.scenario.recreate()
-        compose.onNodeWithTag("scan-SALT").assertTextContains("0.75 g").assertTextContains("Manual")
+        compose.onNodeWithContentDescription("Edit Salt").assertTextContains("0.75 g")
+        compose.onNodeWithTag("scan-SALT").assertTextContains("Manual")
         compose.onNodeWithContentDescription("Edit Salt").performScrollTo().performClick()
         compose.onNodeWithText("Amount (g)").performTextReplacement("-1")
         compose.onNodeWithText("Save value").performClick()
         compose.onNodeWithText(compose.activity.getString(R.string.scan_invalid_amount)).assertIsDisplayed()
         compose.onNodeWithText("Cancel").performClick()
-        compose.onNodeWithTag("scan-SALT").assertTextContains("0.75 g")
+        compose.onNodeWithContentDescription("Edit Salt").assertTextContains("0.75 g")
         compose.onNodeWithContentDescription("Edit Salt").performScrollTo().performClick()
         compose.onNodeWithText("Clear").performClick()
-        compose.onNodeWithTag("scan-SALT").assertTextContains("1 g").assertTextContains("Stable")
+        compose.onNodeWithContentDescription("Edit Salt").assertTextContains("1 g")
+        compose.onNodeWithTag("scan-SALT").assertTextContains("Stable")
         compose.onNodeWithContentDescription("Edit Salt").performScrollTo().performClick()
         compose.onNodeWithText("Amount (g)").performTextReplacement("0")
         compose.onNodeWithText("Save value").performClick()
-        compose.onNodeWithTag("scan-SALT").assertTextContains("0 g").assertTextContains("Manual")
+        compose.onNodeWithContentDescription("Edit Salt").assertTextContains("0 g")
+        compose.onNodeWithTag("scan-SALT").assertTextContains("Manual")
         compose.onNodeWithText("New scan").performClick()
         compose.onNodeWithTag("scan-SALT").assertTextContains("Not found")
         compose.onNodeWithText("0 / 6 fields ready").assertIsDisplayed()

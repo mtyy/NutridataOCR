@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,7 +25,6 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -34,10 +34,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -55,6 +55,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -123,9 +124,11 @@ internal fun OcrScreen(
     }
 
     editingNutrient?.let { nutrient ->
+        val suggestions = remember(nutrient) { model.unidentifiedAmounts }
         ManualNutrientDialog(
             nutrient = nutrient,
             initialAmount = model.manualEntryAmount(nutrient),
+            suggestions = suggestions,
             onSave = { amount ->
                 model.setManualNutrient(nutrient, amount).also { saved ->
                     if (saved) editingNutrient = null
@@ -383,6 +386,9 @@ private fun ScanNutrientRow(
         else -> R.string.scan_collecting
     }
     val ready = stable || manual || (gemini && values.size == 1)
+    val editLabel = stringResource(R.string.scan_edit_nutrient, stringResource(nutrient.labelResource()))
+    val displayedValue = values.joinToString(" / ") { "${it.amount} ${it.unit}" }.ifEmpty { "-" }
+    val valueState = "$displayedValue, ${stringResource(status)}"
     Row(
         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(vertical = 4.dp)
             .testTag("scan-${nutrient.name}").semantics(mergeDescendants = true) {},
@@ -404,14 +410,20 @@ private fun ScanNutrientRow(
             Text(stringResource(nutrient.labelResource()), style = MaterialTheme.typography.bodyMedium)
             Text(stringResource(status), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Text(
-            values.joinToString(" / ") { "${it.amount} ${it.unit}" }.ifEmpty { "-" },
-            modifier = Modifier.weight(0.8f),
-            textAlign = TextAlign.End,
-            style = MaterialTheme.typography.titleMedium,
-        )
-        IconButton(onClick = onEdit) {
-            Icon(Icons.Default.Edit, stringResource(R.string.scan_edit_nutrient, stringResource(nutrient.labelResource())))
+        TextButton(
+            onClick = onEdit,
+            modifier = Modifier.weight(0.8f).heightIn(min = 48.dp).semantics {
+                contentDescription = editLabel
+                stateDescription = valueState
+            },
+        ) {
+            Text(
+                displayedValue,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.End,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
         }
     }
 }
@@ -420,6 +432,7 @@ private fun ScanNutrientRow(
 private fun ManualNutrientDialog(
     nutrient: Nutrient,
     initialAmount: String,
+    suggestions: List<String>,
     onSave: (String) -> Boolean,
     onClear: () -> Unit,
     onDismiss: () -> Unit,
@@ -434,22 +447,42 @@ private fun ManualNutrientDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(nutrient.labelResource())) },
         text = {
-            OutlinedTextField(
-                value = amount,
-                onValueChange = {
-                    if (it.length <= 64) {
-                        amount = it
-                        invalid = false
-                    } else invalid = true
-                },
-                label = { Text(stringResource(R.string.scan_amount_grams)) },
-                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
-                singleLine = true,
-                isError = invalid,
-                supportingText = if (invalid) ({ Text(stringResource(R.string.scan_invalid_amount)) }) else null,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { save() }),
-            )
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = {
+                        if (it.length <= 64) {
+                            amount = it
+                            invalid = false
+                        } else invalid = true
+                    },
+                    label = { Text(stringResource(R.string.scan_amount_grams)) },
+                    modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
+                    singleLine = true,
+                    isError = invalid,
+                    supportingText = if (invalid) ({ Text(stringResource(R.string.scan_invalid_amount)) }) else null,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { save() }),
+                )
+                if (suggestions.isNotEmpty()) {
+                    Text(stringResource(R.string.scan_unidentified_numbers), style = MaterialTheme.typography.labelLarge)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        suggestions.forEach { suggestion ->
+                            SuggestionChip(
+                                onClick = {
+                                    amount = suggestion
+                                    invalid = false
+                                },
+                                label = { Text("$suggestion g") },
+                                modifier = Modifier.heightIn(min = 48.dp),
+                            )
+                        }
+                    }
+                }
+            }
         },
         confirmButton = {
             TextButton(onClick = { save() }, enabled = !invalid) { Text(stringResource(R.string.scan_save_value)) }
@@ -461,7 +494,9 @@ private fun ManualNutrientDialog(
             }
         },
     )
-    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    LaunchedEffect(Unit) {
+        if (suggestions.isEmpty()) focusRequester.requestFocus()
+    }
 }
 
 @Composable

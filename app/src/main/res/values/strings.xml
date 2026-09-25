@@ -50,6 +50,7 @@
     <string name="scan_manual">Manual</string>
     <string name="scan_edit_nutrient">Edit %1$s</string>
     <string name="scan_amount_grams">Amount (g)</string>
+    <string name="scan_unidentified_numbers">Unassigned numbers</string>
     <string name="scan_invalid_amount">Enter a non-negative number, such as 0.5 or &lt;0.5.</string>
     <string name="scan_save_value">Save value</string>
     <string name="scan_clear_value">Clear</string>
