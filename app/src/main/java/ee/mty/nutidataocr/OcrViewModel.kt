@@ -1,6 +1,7 @@
 package ee.mty.nutidataocr
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
@@ -9,8 +10,15 @@ import java.math.BigDecimal
 internal class OcrViewModel : ViewModel() {
     private val scan = NutritionScan()
     private val fallback = NutritionFallback()
+    private val layout = LabelLayoutTracker()
     private var resetAtMillis = Long.MIN_VALUE
 
+    var layoutEnabled by mutableStateOf(false)
+        private set
+    var layoutWords by mutableStateOf<List<OcrToken>>(emptyList())
+        private set
+    var layoutFragmentCount by mutableIntStateOf(0)
+        private set
     var recognizedText by mutableStateOf("")
         private set
     var nutrients by mutableStateOf<Map<Nutrient, List<NutrientValue>>>(emptyMap())
@@ -101,20 +109,41 @@ internal class OcrViewModel : ViewModel() {
     fun onTextRecognized(lines: List<OcrLine>, capturedAtMillis: Long, isPhoto: Boolean = false) {
         if (capturedAtMillis <= resetAtMillis) return
         recognizedText = lines.joinToString("\n") { it.text }
-        nutrients = scan.observe(lines, capturedAtMillis, isPhoto)
-        stableNutrients = scan.stableNutrients
+        if (layoutEnabled) {
+            layout.observe(lines, capturedAtMillis, isPhoto)
+            nutrients = layout.nutrients
+            stableNutrients = layout.stableNutrients
+            layoutWords = layout.words
+            layoutFragmentCount = layout.fragmentCount
+        } else {
+            nutrients = scan.observe(lines, capturedAtMillis, isPhoto)
+            stableNutrients = scan.stableNutrients
+        }
         numericFallback = fallback.observe(lines, capturedAtMillis, nutrients, isPhoto)
     }
 
-    fun reset(timestampMillis: Long) {
+    fun setLayoutEnabled(enabled: Boolean, timestampMillis: Long) {
+        if (layoutEnabled == enabled) return
+        layoutEnabled = enabled
+        resetOcr(timestampMillis)
+    }
+
+    private fun resetOcr(timestampMillis: Long) {
         resetAtMillis = timestampMillis
         scan.reset(timestampMillis)
         fallback.reset(timestampMillis)
+        layout.reset(timestampMillis)
+        layoutWords = emptyList()
+        layoutFragmentCount = 0
         recognizedText = ""
         nutrients = emptyMap()
         stableNutrients = emptySet()
+        numericFallback = NumericFallbackResult()
+    }
+
+    fun reset(timestampMillis: Long) {
+        resetOcr(timestampMillis)
         manualNutrients = emptyMap()
         geminiNutrients = emptyMap()
-        numericFallback = NumericFallbackResult()
     }
 }

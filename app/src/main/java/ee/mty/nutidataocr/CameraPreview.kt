@@ -69,6 +69,7 @@ import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.io.File
+import kotlin.math.atan2
 import kotlin.math.hypot
 
 @androidx.annotation.OptIn(ExperimentalGetImage::class, ExperimentalCamera2Interop::class)
@@ -212,7 +213,7 @@ internal fun CameraPreview(
                                         numbers.minOfOrNull { it.confidence } ?: line.confidence,
                                     ),
                                     textHeightPx = numbers.minOfOrNull { it.textHeightPx() } ?: 24f,
-                                    tokens = line.elements.map { OcrToken(it.text, it.confidence) },
+                                    tokens = line.elements.map { OcrToken(it.text, it.confidence, it.ocrBox()) },
                                 )
                             }
                             latestOnTextRecognized(lines, capturedAtMillis, isPhoto)
@@ -461,6 +462,24 @@ private fun rearCameraLabel(context: Context, id: String, characteristics: Camer
     } else {
         context.getString(R.string.rear_camera, id)
     }
+}
+
+private fun Text.Element.ocrBox(): OcrBox? {
+    val corners = cornerPoints
+    if (corners == null || corners.size != 4) return boundingBox?.let {
+        OcrBox(it.exactCenterX().toDouble(), it.exactCenterY().toDouble(), it.width().toDouble(), it.height().toDouble())
+    }
+    fun edge(first: Int, second: Int) = hypot(
+        (corners[second].x - corners[first].x).toDouble(),
+        (corners[second].y - corners[first].y).toDouble(),
+    )
+    return OcrBox(
+        centerX = corners.map { it.x }.average(),
+        centerY = corners.map { it.y }.average(),
+        width = (edge(0, 1) + edge(3, 2)) / 2,
+        height = (edge(0, 3) + edge(1, 2)) / 2,
+        angle = atan2((corners[1].y - corners[0].y).toDouble(), (corners[1].x - corners[0].x).toDouble()),
+    )
 }
 
 private fun Text.Element.textHeightPx(): Float {

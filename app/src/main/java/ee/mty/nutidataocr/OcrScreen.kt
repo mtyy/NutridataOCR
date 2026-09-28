@@ -256,6 +256,7 @@ internal fun OcrScreen(
             Column(
                 modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()),
             ) {
+                LabelLayoutMode(model.layoutEnabled) { model.setLayoutEnabled(it, SystemClock.elapsedRealtime()) }
                 REQUIRED_SCAN_NUTRIENTS.forEach { nutrient ->
                     ScanNutrientRow(
                         nutrient = nutrient,
@@ -337,6 +338,7 @@ internal fun OcrScreen(
                     expanded = diagnosticsExpanded,
                     onToggle = { diagnosticsExpanded = !diagnosticsExpanded },
                 ) {
+                    if (model.layoutEnabled) LabelLayoutPreview(model.layoutWords, model.layoutFragmentCount)
                     nutrients.forEach { (nutrient, values) ->
                         Text("${stringResource(nutrient.labelResource())}: ${values.joinToString(" / ") { "${it.amount} ${it.unit}" }}")
                     }

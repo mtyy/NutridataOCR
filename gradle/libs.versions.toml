@@ -12,8 +12,10 @@ cameraX = "1.5.0"
 mlkitTextRecognition = "16.0.1"
 json = "20240303"
 commonsText = "1.14.0"
+commonsMath = "3.6.1"
 
 [libraries]
+commons-math = { group = "org.apache.commons", name = "commons-math3", version.ref = "commonsMath" }
 commons-text = { group = "org.apache.commons", name = "commons-text", version.ref = "commonsText" }
 json = { group = "org.json", name = "json", version.ref = "json" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }

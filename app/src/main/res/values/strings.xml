@@ -59,6 +59,10 @@
     <string name="scan_collecting">Collecting</string>
     <string name="scan_multiple_columns">Multiple columns</string>
     <string name="scan_diagnostics">Scan diagnostics</string>
+    <string name="layout_mode">Spatial OCR (experimental)</string>
+    <string name="layout_matrix">Text matrix</string>
+    <string name="layout_counts">%1$d words in this view; %2$d separate fragments</string>
+    <string name="layout_empty">No positioned words yet</string>
     <string name="scan_expanded">Expanded</string>
     <string name="scan_collapsed">Collapsed</string>
     <string name="no_nutrients_detected">No nutrients detected</string>

@@ -2,7 +2,18 @@ package ee.mty.nutidataocr
 
 import kotlin.math.pow
 
-internal data class OcrToken(val text: String, val confidence: Float)
+internal data class OcrToken(val text: String, val confidence: Float, val box: OcrBox? = null)
+
+internal data class OcrBox(
+    val centerX: Double,
+    val centerY: Double,
+    val width: Double,
+    val height: Double,
+    val angle: Double = 0.0,
+) {
+    val valid: Boolean
+        get() = listOf(centerX, centerY, width, height, angle).all { it.isFinite() } && width > 0 && height > 0
+}
 
 internal data class OcrLine(
     val text: String,
