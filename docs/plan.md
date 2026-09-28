@@ -63,6 +63,23 @@ Keep automated tests minimal: add them only when needed to move to the next step
 - Live analysis frames request ~1920×1440 instead of the 640×480 default.
 - Sample benchmark: label data lives outside git in `label-samples/` (ignored; `LABEL_SAMPLES` overrides the path). It holds `photos/`, a hand-checked `expected.json`, an optional `baseline.json` with regression floors, and `ocr/`, which `tools/capture_label_ocr.sh [adb-serial]` records by pushing the photos to a device and running `LabelOcrCapture` (full-resolution photos plus 1280/640 px frames). `LabelSamplesTest` replays `ocr/` through all modes, writes `app/build/label-report.txt` and `label-dump.txt`, and is skipped when the folder is missing. `tools/label-samples-example/` shows the file formats: `per_100` values are copied as printed, `null` means not printed, `per_100: null` marks a photo without nutrition values, and `check`/`note` are free text. `tools/vision_ocr.swift` provides an independent macOS Vision OCR reading for drafting expected values.
 
+### Keeping Your Own Label Samples
+
+Sample photos are personal data and are never committed to `main`. Keep them on a local orphan branch (no shared history with `main`) checked out as a worktree in the ignored `label-samples/` folder, so they are versioned but can never be merged or cherry-picked into the app history:
+
+```sh
+git worktree add --orphan -b label-samples-data label-samples   # Git 2.42+
+mkdir label-samples/photos && cp /path/to/photos/*.jpg label-samples/photos/
+cp tools/label-samples-example/*.json label-samples/            # then edit expected.json
+tools/capture_label_ocr.sh <adb-serial>                          # records label-samples/ocr/
+./gradlew :app:testDebugUnitTest --tests ee.mty.nutidataocr.LabelSamplesTest
+git -C label-samples add -A && git -C label-samples commit -m "Label samples"
+```
+
+- List every photo of one product in the same `expected.json` entry; values come from the label, not from OCR. Raise the floors in `baseline.json` once the report reaches a new level.
+- Commit sample changes inside `label-samples/`; they go to `label-samples-data`, while the repository root stays on its own branch. Plain `git push` never sends the data branch; push it explicitly only to a private remote. On another clone of that remote, restore it with `git worktree add label-samples label-samples-data`.
+- Without the folder the benchmark is skipped, so the app and other tests do not depend on anyone's samples. A separate private repository cloned into `label-samples/` works the same way.
+
 ### Experimental Spatial OCR
 
 - **Spatial** is available in the Recognition selector. Switching modes clears OCR evidence and rejects already-captured frames, but keeps manual and Gemini overrides. **New scan** clears all readings and fragments; the selected mode survives activity recreation through the ViewModel, not process death.
