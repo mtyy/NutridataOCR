@@ -14,11 +14,43 @@ class NutritionScanTest {
         val tokens = listOf("8g", "250mg", "6g", "500mg", "0,50g", "12", "0g", "200kcal", "840kJ", "150g", "10%")
             .map { OcrToken(it, 0.99f) } + OcrToken("9g", 0.4f)
         model.onTextRecognized(listOf(OcrLine("Fat 8 g"), OcrLine("", tokens = tokens)), 1000)
-        assertEquals(listOf("0.5", "12", "0"), model.unidentifiedAmounts)
+        assertEquals(listOf("0.5", "12.0", "0.0"), model.unidentifiedAmounts)
         model.setManualNutrient(Nutrient.SUGARS, "0.5")
-        assertEquals(listOf("12", "0"), model.unidentifiedAmounts)
+        assertEquals(listOf("12.0", "0.0"), model.unidentifiedAmounts)
         model.reset(2000)
         assertTrue(model.unidentifiedAmounts.isEmpty())
+    }
+
+    @Test
+    fun decimalPointShiftsKeepComparisonAndAtLeastOneDecimal() {
+        assertEquals("1.0", shiftDecimalPoint("10", -1))
+        assertEquals("<0.05", shiftDecimalPoint("< 0,5", -1))
+        assertEquals("15.0", shiftDecimalPoint("1.5", 1))
+        assertEquals("0.0", shiftDecimalPoint("0", 1))
+        listOf("", "-1", "1e3", "abc").forEach { assertEquals(it, null, shiftDecimalPoint(it, 1)) }
+        assertEquals("20.0", formatGrams(java.math.BigDecimal("2E+1")))
+    }
+
+    @Test
+    fun warnsAboutImplausibleValuesRegardlessOfSource() {
+        fun g(amount: String) = listOf(NutrientValue(amount, "g"))
+        assertTrue(nutrientWarnings(mapOf(
+            Nutrient.FAT to g("8"), Nutrient.SATURATES to g("2"), Nutrient.CARBOHYDRATES to g("12"),
+            Nutrient.SUGARS to g("<0.5"), Nutrient.PROTEIN to g("6"), Nutrient.SALT to listOf(NutrientValue("500", "mg")),
+        )).isEmpty())
+        assertEquals(mapOf(
+            Nutrient.SATURATES to NutrientWarning.OVER_FAT,
+            Nutrient.SUGARS to NutrientWarning.OVER_CARBOHYDRATES,
+            Nutrient.SALT to NutrientWarning.HIGH_SALT,
+        ), nutrientWarnings(mapOf(
+            Nutrient.FAT to g("2"), Nutrient.SATURATES to g("5"), Nutrient.CARBOHYDRATES to g("10"),
+            Nutrient.SUGARS to g("12"), Nutrient.SALT to g("10"),
+        )))
+        assertEquals(mapOf(
+            Nutrient.FAT to NutrientWarning.MACROS_OVER_100,
+            Nutrient.CARBOHYDRATES to NutrientWarning.OVER_100,
+        ), nutrientWarnings(mapOf(Nutrient.FAT to g("5"), Nutrient.CARBOHYDRATES to g("105"))))
+        assertTrue(nutrientWarnings(mapOf(Nutrient.SALT to g("8") + g("1"))).isEmpty())
     }
 
     @Test

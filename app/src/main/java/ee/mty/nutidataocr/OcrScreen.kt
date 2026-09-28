@@ -24,6 +24,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -34,6 +36,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -256,6 +259,7 @@ internal fun OcrScreen(
             Column(
                 modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()),
             ) {
+                val warnings = nutrientWarnings(displayedNutrients)
                 REQUIRED_SCAN_NUTRIENTS.forEach { nutrient ->
                     ScanNutrientRow(
                         nutrient = nutrient,
@@ -264,6 +268,7 @@ internal fun OcrScreen(
                         corrected = nutrient in model.correctedNutrients,
                         manual = nutrient in model.manualNutrients,
                         gemini = nutrient in model.geminiNutrients,
+                        warning = warnings[nutrient],
                         onEdit = { editingNutrient = nutrient },
                     )
                     HorizontalDivider()
@@ -379,6 +384,7 @@ private fun ScanNutrientRow(
     corrected: Boolean,
     manual: Boolean,
     gemini: Boolean,
+    warning: NutrientWarning?,
     onEdit: () -> Unit,
 ) {
     val status = when {
@@ -393,7 +399,8 @@ private fun ScanNutrientRow(
     val ready = stable || manual || (gemini && values.size == 1)
     val editLabel = stringResource(R.string.scan_edit_nutrient, stringResource(nutrient.labelResource()))
     val displayedValue = values.joinToString(" / ") { "${it.amount} ${it.unit}" }.ifEmpty { "-" }
-    val valueState = "$displayedValue, ${stringResource(status)}"
+    val warningText = warning?.let { stringResource(it.labelResource()) }
+    val valueState = listOfNotNull(displayedValue, stringResource(status), warningText).joinToString(", ")
     Row(
         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(vertical = 4.dp)
             .testTag("scan-${nutrient.name}").semantics(mergeDescendants = true) {},
@@ -402,6 +409,7 @@ private fun ScanNutrientRow(
     ) {
         Icon(
             imageVector = when {
+                warning != null -> Icons.Default.Warning
                 ready -> Icons.Default.CheckCircle
                 values.isEmpty() -> Icons.Default.Search
                 values.size > 1 -> Icons.Default.Warning
@@ -409,11 +417,18 @@ private fun ScanNutrientRow(
             },
             contentDescription = null,
             modifier = Modifier.size(24.dp),
-            tint = if (ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = when {
+                warning != null -> MaterialTheme.colorScheme.error
+                ready -> MaterialTheme.colorScheme.primary
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            },
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(stringResource(nutrient.labelResource()), style = MaterialTheme.typography.bodyMedium)
             Text(stringResource(status), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            warningText?.let {
+                Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+            }
         }
         TextButton(
             onClick = onEdit,
@@ -469,6 +484,20 @@ private fun ManualNutrientDialog(
                     singleLine = true,
                     isError = invalid,
                     supportingText = if (invalid) ({ Text(stringResource(R.string.scan_invalid_amount)) }) else null,
+                    trailingIcon = {
+                        Row {
+                            listOf(
+                                Triple(-1, Icons.AutoMirrored.Filled.KeyboardArrowLeft, R.string.scan_decimal_left),
+                                Triple(1, Icons.AutoMirrored.Filled.KeyboardArrowRight, R.string.scan_decimal_right),
+                            ).forEach { (places, icon, label) ->
+                                val shifted = shiftDecimalPoint(amount, places)
+                                IconButton(
+                                    onClick = { shifted?.let { amount = it; invalid = false } },
+                                    enabled = shifted != null,
+                                ) { Icon(icon, contentDescription = stringResource(label)) }
+                            }
+                        }
+                    },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { save() }),
                 )
@@ -516,6 +545,14 @@ private fun ScannerSection(title: String, expanded: Boolean, onToggle: () -> Uni
             content()
         }
     }
+}
+
+private fun NutrientWarning.labelResource() = when (this) {
+    NutrientWarning.OVER_100 -> R.string.scan_warning_over_100
+    NutrientWarning.HIGH_SALT -> R.string.scan_warning_high_salt
+    NutrientWarning.OVER_FAT -> R.string.scan_warning_over_fat
+    NutrientWarning.OVER_CARBOHYDRATES -> R.string.scan_warning_over_carbohydrates
+    NutrientWarning.MACROS_OVER_100 -> R.string.scan_warning_macros_over_100
 }
 
 private fun Nutrient.labelResource() = when (this) {

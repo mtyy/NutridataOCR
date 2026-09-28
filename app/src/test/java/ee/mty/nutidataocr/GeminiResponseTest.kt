@@ -33,7 +33,7 @@ class GeminiResponseTest {
         assertEquals("confirmed_gemini", sources.getString("84"))
         assertEquals("manual", sources.getString("3"))
         model.useOcr(Nutrient.SALT)
-        assertEquals("2", model.manualEntryAmount(Nutrient.SALT))
+        assertEquals("2.0", model.manualEntryAmount(Nutrient.SALT))
         model.reset(3000)
         assertTrue(model.geminiNutrients.isEmpty())
         assertTrue(model.effectiveNutrients.isEmpty())
@@ -45,9 +45,9 @@ class GeminiResponseTest {
         val serving = GeminiColumn("per serving", listOf(GeminiNutrient("fat", "4", "g")))
         val per100 = GeminiColumn("per 100g", listOf(GeminiNutrient("fat", "8", "g")))
         assertTrue(model.importGemini(GeminiNutrition(listOf(serving, per100), emptyList())))
-        assertEquals("8", model.manualEntryAmount(Nutrient.FAT))
+        assertEquals("8.0", model.manualEntryAmount(Nutrient.FAT))
         assertFalse(model.importGemini(GeminiNutrition(listOf(serving, serving), emptyList())))
-        assertEquals("8", model.manualEntryAmount(Nutrient.FAT))
+        assertEquals("8.0", model.manualEntryAmount(Nutrient.FAT))
         model.importGeminiColumn(GeminiColumn(null, listOf(
             GeminiNutrient("salt", "< 500", "mg"),
             GeminiNutrient("protein", "3", "g"), GeminiNutrient("protein", "6", "g"),

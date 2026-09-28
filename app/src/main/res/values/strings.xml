@@ -64,6 +64,13 @@
     <string name="scan_mode_line">Lines</string>
     <string name="scan_mode_spatial">Spatial</string>
     <string name="scan_corrected">Repaired, please check</string>
+    <string name="scan_warning_over_100">Over 100 g, please check</string>
+    <string name="scan_warning_high_salt">Unusually salty, please check</string>
+    <string name="scan_warning_over_fat">More than fat, please check</string>
+    <string name="scan_warning_over_carbohydrates">More than carbohydrates, please check</string>
+    <string name="scan_warning_macros_over_100">Fat, carbohydrates and protein exceed 100 g</string>
+    <string name="scan_decimal_left">Move decimal point left</string>
+    <string name="scan_decimal_right">Move decimal point right</string>
     <string name="layout_matrix">Text matrix</string>
     <string name="layout_counts">%1$d words in this view; %2$d separate fragments</string>
     <string name="layout_empty">No positioned words yet</string>

@@ -9,6 +9,19 @@ import java.math.BigDecimal
 
 internal enum class ScanMode { AUTO, LINE, SPATIAL }
 
+private val MANUAL_AMOUNT = Regex("[<>]?\\s*(?:\\d+(?:[.,]\\d+)?|[.,]\\d+)")
+
+internal fun formatGrams(amount: BigDecimal): String =
+    amount.stripTrailingZeros().let { if (it.scale() < 1) it.setScale(1) else it }.toPlainString()
+
+internal fun shiftDecimalPoint(input: String, places: Int): String? {
+    val text = input.trim()
+    if (!MANUAL_AMOUNT.matches(text)) return null
+    val comparison = text.takeWhile { it == '<' || it == '>' }
+    val amount = text.removePrefix(comparison).trim().replace(',', '.').toBigDecimal()
+    return (comparison + formatGrams(amount.movePointRight(places))).takeIf { it.length <= 64 }
+}
+
 internal class OcrViewModel : ViewModel() {
     private val scan = NutritionScan()
     private val fallback = NutritionFallback()
@@ -59,8 +72,7 @@ internal class OcrViewModel : ViewModel() {
             "mg" -> number.movePointLeft(3)
             else -> return null
         }
-        return grams.takeIf { it >= BigDecimal.ZERO && it <= BigDecimal(100) }
-            ?.stripTrailingZeros()?.toPlainString()
+        return grams.takeIf { it >= BigDecimal.ZERO && it <= BigDecimal(100) }?.let(::formatGrams)
     }
 
     fun importGemini(response: GeminiNutrition): Boolean {
@@ -86,7 +98,7 @@ internal class OcrViewModel : ViewModel() {
     fun setManualNutrient(nutrient: Nutrient, input: String): Boolean {
         if (nutrient !in REQUIRED_SCAN_NUTRIENTS || input.length > 64) return false
         val text = input.trim()
-        if (!Regex("[<>]?\\s*(?:\\d+(?:[.,]\\d+)?|[.,]\\d+)").matches(text)) return false
+        if (!MANUAL_AMOUNT.matches(text)) return false
         val comparison = text.takeWhile { it == '<' || it == '>' }
         val amount = text.removePrefix(comparison).trim().replace(',', '.').toBigDecimalOrNull() ?: return false
         val value = NutrientValue(comparison + amount.stripTrailingZeros().toPlainString(), "g")
@@ -108,7 +120,7 @@ internal class OcrViewModel : ViewModel() {
             "mg" -> number.movePointLeft(3)
             else -> return ""
         }
-        return comparison + grams.stripTrailingZeros().toPlainString()
+        return comparison + formatGrams(grams)
     }
 
     fun onTextRecognized(lines: List<OcrLine>, capturedAtMillis: Long, isPhoto: Boolean = false) {

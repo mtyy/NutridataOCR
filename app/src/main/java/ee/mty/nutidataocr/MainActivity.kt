@@ -295,4 +295,4 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private const val NUTRIDATA_URL = "https://tap.nutridata.ee/et/"
+private const val NUTRIDATA_URL = "https://tap.nutridata.ee/et/toidupaevik"
