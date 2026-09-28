@@ -22,6 +22,10 @@ class NutritionParserTest {
             listOf("Riebalu", "Sociuju riebalu rugsciu", "Angliavandeniu", "Cukru", "Skaiduliniu medziagu", "Baltymu", "Druskos"),
             listOf("Fette", "Gesaettigte Fettsaeuren", "Kohlenhydraten", "Zucker", "Ballaststoffen", "Eiweisse", "Salz"),
             listOf("Tluszczu", "Kwasy nasycone", "Weglowodanow", "Cukrow", "Blonnika", "Bialka", "Soli"),
+            listOf("Vet", "waarvan verzadigde vetzuren", "Koolhydraten", "waarvan suikers", "Voedingsvezel", "Eiwitten", "Zout"),
+            listOf("Mati\u00e8res grasses", "dont acides gras satur\u00e9s", "Glucides", "dont sucres", "Fibres alimentaires", "Prot\u00e9ines", "Sel"),
+            listOf("Fedt", "heraf m\u00e6ttede fedtsyrer", "Kulhydrat", "heraf sukkerarter", "Kostfibre", "Protein", "Salt"),
+            listOf("Fett", "varav m\u00e4ttat fett", "Kolhydrat", "varav sockerarter", "Fiber", "Protein", "Salt"),
         )
         val fields = listOf(
             Nutrient.FAT, Nutrient.SATURATES, Nutrient.CARBOHYDRATES,
@@ -71,10 +75,27 @@ class NutritionParserTest {
     }
 
     @Test
+    fun aliasesAreNormalizedUniqueAndAtLeastTwoEditsFromOtherNutrients() {
+        val aliases = nutrientNames.flatMap { (nutrient, names) -> names.map { it to nutrient } }
+        aliases.forEach { (name, _) -> assertEquals(name, normalizeLabelText(name), name) }
+        val distance = org.apache.commons.text.similarity.LevenshteinDistance.getDefaultInstance()
+        val collisions = aliases.flatMap { (name, nutrient) ->
+            aliases.filter { (other, otherNutrient) ->
+                otherNutrient != nutrient && name < other && distance.apply(name, other) < 2
+            }.map { "$name ($nutrient) ~ ${it.first} (${it.second})" }
+        }
+        assertEquals(emptyList<String>(), collisions)
+    }
+
+    @Test
     fun doesNotFuzzShortWordsNumbersOrUnsupportedFatTypes() {
         listOf("Fast 2 g", "Sold 2 g", "Soolane 2 g", "Fatty 2 g", "Unsaturated fat 2 g",
             "Monounsaturated fat 2 g", "Polyunsaturated fats 2 g", "Trans fat 2 g",
-            "Pr0tein six g", "Pr0tein 6 q", "Pr0tein\n6 g").forEach { text ->
+            "Pr0tein six g", "Pr0tein 6 q", "Pr0tein\n6 g",
+            "waarvan enkelvoudig onverzadigde vetten 2 g", "meervoudig onverzadigd vet 2 g", "transvet 2 g",
+            "davon einfach unges\u00e4ttigte Fette 2 g", "mehrfach unges\u00e4ttigte Fette 2 g",
+            "heraf enkeltum\u00e6ttede fedtsyrer 2 g", "flerum\u00e6ttede fedtsyrer 2 g",
+            "varav enkelom\u00e4ttat fett 2 g", "flerom\u00e4ttat fett 2 g").forEach { text ->
             assertEquals(text, emptyMap<Nutrient, List<NutrientValue>>(), parseNutrition(text))
         }
         assertEquals(mapOf(Nutrient.FAT to listOf(NutrientValue("8", "g"))),

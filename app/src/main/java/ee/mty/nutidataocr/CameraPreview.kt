@@ -10,6 +10,7 @@ import android.hardware.camera2.TotalCaptureResult
 import android.os.Build
 import android.os.SystemClock
 import android.util.Log
+import android.util.Size
 import android.view.Surface
 import android.widget.Toast
 import androidx.camera.camera2.interop.Camera2CameraInfo
@@ -137,6 +138,12 @@ internal fun CameraPreview(
             val builder = ImageAnalysis.Builder()
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .setTargetRotation(rotation)
+                // The 640x480 default loses small label digits; sample labels read far better at ~1920 px.
+                .setResolutionSelector(
+                    ResolutionSelector.Builder().setResolutionStrategy(
+                        ResolutionStrategy(Size(1920, 1440), ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER)
+                    ).build()
+                )
             physicalCameraId?.let { Camera2Interop.Extender(builder).setPhysicalCameraId(it) }
             builder.build()
         }
@@ -202,20 +209,7 @@ internal fun CameraPreview(
                         finishProcessing(isPhoto)
                         if (disposed) return@addOnCompleteListener
                         if (task.isSuccessful) {
-                            val lines = task.result.textBlocks.flatMap { it.lines }.map { line ->
-                                val numbers = line.elements.filter { element ->
-                                    element.text.any { it.isDigit() }
-                                }
-                                OcrLine(
-                                    text = line.text,
-                                    confidence = minOf(
-                                        line.confidence,
-                                        numbers.minOfOrNull { it.confidence } ?: line.confidence,
-                                    ),
-                                    textHeightPx = numbers.minOfOrNull { it.textHeightPx() } ?: 24f,
-                                    tokens = line.elements.map { OcrToken(it.text, it.confidence, it.ocrBox()) },
-                                )
-                            }
+                            val lines = task.result.toOcrLines()
                             latestOnTextRecognized(lines, capturedAtMillis, isPhoto)
                             if (isPhoto) {
                                 Toast.makeText(
@@ -462,6 +456,16 @@ private fun rearCameraLabel(context: Context, id: String, characteristics: Camer
     } else {
         context.getString(R.string.rear_camera, id)
     }
+}
+
+internal fun Text.toOcrLines(): List<OcrLine> = textBlocks.flatMap { it.lines }.map { line ->
+    val numbers = line.elements.filter { element -> element.text.any { it.isDigit() } }
+    OcrLine(
+        text = line.text,
+        confidence = minOf(line.confidence, numbers.minOfOrNull { it.confidence } ?: line.confidence),
+        textHeightPx = numbers.minOfOrNull { it.textHeightPx() } ?: 24f,
+        tokens = line.elements.map { OcrToken(it.text, it.confidence, it.ocrBox()) },
+    )
 }
 
 private fun Text.Element.ocrBox(): OcrBox? {

@@ -7,13 +7,16 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import java.math.BigDecimal
 
+internal enum class ScanMode { AUTO, LINE, SPATIAL }
+
 internal class OcrViewModel : ViewModel() {
     private val scan = NutritionScan()
     private val fallback = NutritionFallback()
     private val layout = LabelLayoutTracker()
+    private val auto = AutoNutrition()
     private var resetAtMillis = Long.MIN_VALUE
 
-    var layoutEnabled by mutableStateOf(false)
+    var mode by mutableStateOf(ScanMode.AUTO)
         private set
     var layoutWords by mutableStateOf<List<OcrToken>>(emptyList())
         private set
@@ -24,6 +27,8 @@ internal class OcrViewModel : ViewModel() {
     var nutrients by mutableStateOf<Map<Nutrient, List<NutrientValue>>>(emptyMap())
         private set
     var stableNutrients by mutableStateOf<Set<Nutrient>>(emptySet())
+        private set
+    var correctedNutrients by mutableStateOf<Set<Nutrient>>(emptySet())
         private set
     var manualNutrients by mutableStateOf<Map<Nutrient, NutrientValue>>(emptyMap())
         private set
@@ -109,22 +114,42 @@ internal class OcrViewModel : ViewModel() {
     fun onTextRecognized(lines: List<OcrLine>, capturedAtMillis: Long, isPhoto: Boolean = false) {
         if (capturedAtMillis <= resetAtMillis) return
         recognizedText = lines.joinToString("\n") { it.text }
-        if (layoutEnabled) {
-            layout.observe(lines, capturedAtMillis, isPhoto)
-            nutrients = layout.nutrients
-            stableNutrients = layout.stableNutrients
-            layoutWords = layout.words
-            layoutFragmentCount = layout.fragmentCount
-        } else {
-            nutrients = scan.observe(lines, capturedAtMillis, isPhoto)
-            stableNutrients = scan.stableNutrients
+        val current: Map<Nutrient, List<NutrientValue>>
+        val currentStable: Set<Nutrient>
+        var currentCorrected = emptySet<Nutrient>()
+        when (mode) {
+            ScanMode.AUTO -> {
+                current = auto.observe(lines, capturedAtMillis, isPhoto)
+                currentStable = auto.stableNutrients
+                currentCorrected = auto.correctedNutrients
+                layoutWords = auto.words
+                layoutFragmentCount = auto.fragmentCount
+            }
+            ScanMode.SPATIAL -> {
+                layout.observe(lines, capturedAtMillis, isPhoto)
+                current = layout.nutrients
+                currentStable = layout.stableNutrients
+                layoutWords = layout.words
+                layoutFragmentCount = layout.fragmentCount
+            }
+            ScanMode.LINE -> {
+                current = scan.observe(lines, capturedAtMillis, isPhoto)
+                currentStable = scan.stableNutrients
+            }
         }
+        // Everything found stays until New scan: values are only replaced, and readiness only lost when the value changes.
+        val previous = nutrients
+        nutrients = (previous + current).toSortedMap()
+        stableNutrients = currentStable.filterTo(mutableSetOf()) { it in current } +
+            stableNutrients.filter { nutrients[it] == previous[it] }
+        correctedNutrients = (currentCorrected.filterTo(mutableSetOf()) { it in current } +
+            correctedNutrients.filter { it !in current }) - stableNutrients
         numericFallback = fallback.observe(lines, capturedAtMillis, nutrients, isPhoto)
     }
 
-    fun setLayoutEnabled(enabled: Boolean, timestampMillis: Long) {
-        if (layoutEnabled == enabled) return
-        layoutEnabled = enabled
+    fun setMode(mode: ScanMode, timestampMillis: Long) {
+        if (this.mode == mode) return
+        this.mode = mode
         resetOcr(timestampMillis)
     }
 
@@ -133,11 +158,13 @@ internal class OcrViewModel : ViewModel() {
         scan.reset(timestampMillis)
         fallback.reset(timestampMillis)
         layout.reset(timestampMillis)
+        auto.reset(timestampMillis)
         layoutWords = emptyList()
         layoutFragmentCount = 0
         recognizedText = ""
         nutrients = emptyMap()
         stableNutrients = emptySet()
+        correctedNutrients = emptySet()
         numericFallback = NumericFallbackResult()
     }
 

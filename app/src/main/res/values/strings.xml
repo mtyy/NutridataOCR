@@ -59,7 +59,11 @@
     <string name="scan_collecting">Collecting</string>
     <string name="scan_multiple_columns">Multiple columns</string>
     <string name="scan_diagnostics">Scan diagnostics</string>
-    <string name="layout_mode">Spatial OCR (experimental)</string>
+    <string name="scan_mode">Recognition</string>
+    <string name="scan_mode_auto">Auto</string>
+    <string name="scan_mode_line">Lines</string>
+    <string name="scan_mode_spatial">Spatial</string>
+    <string name="scan_corrected">Repaired, please check</string>
     <string name="layout_matrix">Text matrix</string>
     <string name="layout_counts">%1$d words in this view; %2$d separate fragments</string>
     <string name="layout_empty">No positioned words yet</string>

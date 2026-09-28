@@ -163,27 +163,32 @@ class LabelLayoutTrackerTest {
     }
 
     @Test
-    fun optionalModeKeepsOverridesAndIsolatesOcrEvidenceAcrossSwitches() {
+    fun modesKeepOverridesAndIsolateOcrEvidenceAcrossSwitches() {
         val model = OcrViewModel()
+        assertEquals(ScanMode.AUTO, model.mode)
+        model.setMode(ScanMode.LINE, 900)
         model.setManualNutrient(Nutrient.SALT, "0.5")
         model.importGeminiColumn(GeminiColumn("per 100 g", listOf(GeminiNutrient("protein", "6", "g"))))
         val frame = anchors() + word("Fat", 40.0, 60.0) + word("8g", 480.0, 60.0)
         model.onTextRecognized(frame, 1000)
-        assertFalse(model.layoutEnabled)
         assertFalse(Nutrient.FAT in model.nutrients)
-        model.setLayoutEnabled(true, 1100)
+        model.setMode(ScanMode.SPATIAL, 1100)
         model.onTextRecognized(frame, 1000, isPhoto = true)
         assertTrue(model.layoutWords.isEmpty())
         repeat(3) { index -> model.onTextRecognized(frame, 1200 + index * 300L) }
         assertTrue(Nutrient.FAT in model.readyNutrients)
         assertEquals(listOf(NutrientValue("8", "g")), model.nutrients[Nutrient.FAT])
-        model.setLayoutEnabled(false, 2000)
+        model.setMode(ScanMode.AUTO, 2000)
         assertTrue(model.layoutWords.isEmpty())
         assertTrue(model.nutrients.isEmpty())
         assertEquals(setOf(Nutrient.SALT, Nutrient.PROTEIN), model.readyNutrients)
-        model.onTextRecognized(listOf(OcrLine("Fat 9 g")), 2300)
+        repeat(3) { index -> model.onTextRecognized(frame, 2100 + index * 300L) }
+        assertEquals(listOf(NutrientValue("8", "g")), model.nutrients[Nutrient.FAT])
+        assertTrue(Nutrient.FAT in model.readyNutrients)
+        model.setMode(ScanMode.LINE, 3000)
+        model.onTextRecognized(listOf(OcrLine("Fat 9 g")), 3300)
         assertEquals(listOf(NutrientValue("9", "g")), model.nutrients[Nutrient.FAT])
-        model.reset(2500)
+        model.reset(3500)
         assertTrue(model.readyNutrients.isEmpty())
     }
 

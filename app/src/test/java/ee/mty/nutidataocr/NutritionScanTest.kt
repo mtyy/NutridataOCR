@@ -40,6 +40,25 @@ class NutritionScanTest {
     }
 
     @Test
+    fun foundValuesAndReadinessStayUntilNewScan() {
+        listOf(ScanMode.AUTO, ScanMode.LINE).forEach { mode ->
+            val model = OcrViewModel()
+            model.setMode(mode, 0)
+            val label = listOf(OcrLine("Fat 8 g", confidence = 0.95f), OcrLine("Sugars 3 g", confidence = 0.5f))
+            repeat(3) { index -> model.onTextRecognized(label, 1_000 + index * 300L) }
+            assertTrue(mode.name, Nutrient.FAT in model.readyNutrients)
+            repeat(30) { index ->
+                model.onTextRecognized(listOf(OcrLine("Some other text")), 2_000 + index * 300L)
+            }
+            assertEquals(mode.name, listOf(NutrientValue("8", "g")), model.nutrients[Nutrient.FAT])
+            assertEquals(mode.name, listOf(NutrientValue("3", "g")), model.nutrients[Nutrient.SUGARS])
+            assertTrue(mode.name, Nutrient.FAT in model.readyNutrients)
+            model.reset(20_000)
+            assertTrue(mode.name, model.nutrients.isEmpty())
+        }
+    }
+
+    @Test
     fun manualMissingValueCompletesTheChecklistWithoutBecomingAnOcrReading() {
         val model = OcrViewModel()
         val lines = listOf("Fat 8 g", "Saturates 2 g", "Carbohydrates 12 g", "Sugars 0 g", "Protein 6 g")
@@ -77,6 +96,7 @@ class NutritionScanTest {
     @Test
     fun manualEntryNormalizesUnitsAndRejectsInvalidValuesWithoutLosingTheOverride() {
         val model = OcrViewModel()
+        model.setMode(ScanMode.LINE, 0)
         model.onTextRecognized(listOf(OcrLine("Salt 500 mg", confidence = 0.95f)), 1_000)
         assertEquals("0.5", model.manualEntryAmount(Nutrient.SALT))
         model.onTextRecognized(listOf(OcrLine("Protein 12 g 6 g", confidence = 0.95f)), 1_300)

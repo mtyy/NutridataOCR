@@ -256,18 +256,19 @@ internal fun OcrScreen(
             Column(
                 modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()),
             ) {
-                LabelLayoutMode(model.layoutEnabled) { model.setLayoutEnabled(it, SystemClock.elapsedRealtime()) }
                 REQUIRED_SCAN_NUTRIENTS.forEach { nutrient ->
                     ScanNutrientRow(
                         nutrient = nutrient,
                         values = displayedNutrients[nutrient].orEmpty(),
                         stable = nutrient in model.stableNutrients && nutrient !in model.geminiNutrients,
+                        corrected = nutrient in model.correctedNutrients,
                         manual = nutrient in model.manualNutrients,
                         gemini = nutrient in model.geminiNutrients,
                         onEdit = { editingNutrient = nutrient },
                     )
                     HorizontalDivider()
                 }
+                ScanModeSelector(model.mode) { model.setMode(it, SystemClock.elapsedRealtime()) }
                 ScannerSection(
                     title = stringResource(R.string.gemini_response),
                     expanded = geminiExpanded,
@@ -338,7 +339,7 @@ internal fun OcrScreen(
                     expanded = diagnosticsExpanded,
                     onToggle = { diagnosticsExpanded = !diagnosticsExpanded },
                 ) {
-                    if (model.layoutEnabled) LabelLayoutPreview(model.layoutWords, model.layoutFragmentCount)
+                    if (model.mode != ScanMode.LINE) LabelLayoutPreview(model.layoutWords, model.layoutFragmentCount)
                     nutrients.forEach { (nutrient, values) ->
                         Text("${stringResource(nutrient.labelResource())}: ${values.joinToString(" / ") { "${it.amount} ${it.unit}" }}")
                     }
@@ -375,6 +376,7 @@ private fun ScanNutrientRow(
     nutrient: Nutrient,
     values: List<NutrientValue>,
     stable: Boolean,
+    corrected: Boolean,
     manual: Boolean,
     gemini: Boolean,
     onEdit: () -> Unit,
@@ -385,6 +387,7 @@ private fun ScanNutrientRow(
         gemini -> R.string.gemini
         stable -> R.string.scan_stable
         values.isEmpty() -> R.string.scan_not_found
+        corrected -> R.string.scan_corrected
         else -> R.string.scan_collecting
     }
     val ready = stable || manual || (gemini && values.size == 1)

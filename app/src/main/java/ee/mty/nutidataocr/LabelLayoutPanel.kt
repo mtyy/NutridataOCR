@@ -1,23 +1,20 @@
 package ee.mty.nutidataocr
 
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -26,16 +23,24 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 
 @Composable
-internal fun LabelLayoutMode(enabled: Boolean, onChange: (Boolean) -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-            .toggleable(value = enabled, role = Role.Switch, onValueChange = onChange)
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text(stringResource(R.string.layout_mode), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        Switch(checked = enabled, onCheckedChange = null)
+internal fun ScanModeSelector(mode: ScanMode, onChange: (ScanMode) -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Text(stringResource(R.string.scan_mode), style = MaterialTheme.typography.bodyMedium)
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            ScanMode.entries.forEachIndexed { index, option ->
+                SegmentedButton(
+                    selected = option == mode,
+                    onClick = { onChange(option) },
+                    shape = SegmentedButtonDefaults.itemShape(index, ScanMode.entries.size),
+                ) {
+                    Text(stringResource(when (option) {
+                        ScanMode.AUTO -> R.string.scan_mode_auto
+                        ScanMode.LINE -> R.string.scan_mode_line
+                        ScanMode.SPATIAL -> R.string.scan_mode_spatial
+                    }))
+                }
+            }
+        }
     }
 }
 

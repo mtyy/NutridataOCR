@@ -1,0 +1,15 @@
+[
+  {
+    "product": "Example yogurt 150 g",
+    "photos": ["20260101_120000.jpg", "20260101_120005.jpg"],
+    "columns": ["100 g", "150 g portion"],
+    "per_100": {"energy_kj": "280", "energy_kcal": "67", "fat": "1,5", "saturates": "1,0", "carbohydrates": "7,4", "sugars": "<0,5", "fibre": null, "protein": "6,0", "salt": "0,10"},
+    "check": ["Optional drafting doubts"],
+    "note": "Optional reviewer note, e.g. decimal point worn off"
+  },
+  {
+    "product": "Example photo without nutrition values",
+    "photos": ["20260101_120100.jpg"],
+    "per_100": null
+  }
+]
