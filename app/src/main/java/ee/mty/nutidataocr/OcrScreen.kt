@@ -2,11 +2,14 @@ package ee.mty.nutidataocr
 
 import android.Manifest
 import android.content.ClipboardManager
+import android.content.Context
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.SystemClock
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,6 +37,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,6 +52,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -56,6 +61,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
@@ -67,6 +73,18 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.google.android.gms.tasks.Task
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 
 @Composable
 internal fun OcrScreen(
@@ -119,6 +137,37 @@ internal fun OcrScreen(
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { permissionGranted = it }
+    val scope = rememberCoroutineScope()
+    var galleryJob by remember { mutableStateOf<Job?>(null) }
+    fun newScan() {
+        galleryJob?.cancel()
+        galleryJob = null
+        resetAtMillis = SystemClock.elapsedRealtime()
+        model.reset(resetAtMillis)
+        pastedResponse = ""
+        importedResponse = ""
+        responseError = null
+        chooseGeminiColumn = false
+    }
+    val galleryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        newScan()
+        val job = scope.launch {
+            val scanned = scanGalleryPhotos(context, uris) { lines ->
+                model.onTextRecognized(lines, SystemClock.elapsedRealtime(), isPhoto = true)
+            }
+            Toast.makeText(
+                context,
+                if (scanned == 0) context.getString(R.string.photo_no_text)
+                else context.getString(R.string.gallery_scanned, scanned, uris.size),
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
+        galleryJob = job
+        job.invokeOnCompletion { if (galleryJob === job) galleryJob = null }
+    }
 
     LaunchedEffect(Unit) {
         if (!permissionGranted) {
@@ -180,7 +229,10 @@ internal fun OcrScreen(
     Column(modifier = modifier.fillMaxSize()) {
         if (permissionGranted) {
             CameraPreview(
-                onTextRecognized = model::onTextRecognized,
+                // Gallery photos are one label; live frames must not mix into that scan.
+                onTextRecognized = { lines, capturedAtMillis, isPhoto ->
+                    if (galleryJob == null) model.onTextRecognized(lines, capturedAtMillis, isPhoto)
+                },
                 onGeminiPhoto = { photo, capturedAtMillis ->
                     if (capturedAtMillis <= resetAtMillis) {
                         photo.delete()
@@ -226,14 +278,22 @@ internal fun OcrScreen(
                         style = MaterialTheme.typography.titleSmall,
                     )
                 }
-                TextButton(onClick = {
-                    resetAtMillis = SystemClock.elapsedRealtime()
-                    model.reset(resetAtMillis)
-                    pastedResponse = ""
-                    importedResponse = ""
-                    responseError = null
-                    chooseGeminiColumn = false
-                }) {
+                if (galleryJob != null) {
+                    Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                    }
+                } else {
+                    IconButton(onClick = {
+                        galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    }) {
+                        Icon(
+                            painter = painterResource(android.R.drawable.ic_menu_gallery),
+                            contentDescription = stringResource(R.string.pick_photos),
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
+                TextButton(onClick = { newScan() }) {
                     Text(stringResource(R.string.new_scan))
                 }
             }
@@ -544,6 +604,38 @@ private fun ScannerSection(title: String, expanded: Boolean, onToggle: () -> Uni
         Column(modifier = Modifier.padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             content()
         }
+    }
+}
+
+/** Feeds each photo through OCR as one more frame of the same label; returns how many yielded text. */
+private suspend fun scanGalleryPhotos(context: Context, uris: List<Uri>, onFrame: (List<OcrLine>) -> Unit): Int {
+    val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    try {
+        var scanned = 0
+        for (uri in uris) {
+            try {
+                val image = withContext(Dispatchers.IO) { InputImage.fromFilePath(context, uri) }
+                val lines = recognizer.process(image).await().toOcrLines()
+                if (lines.isNotEmpty()) {
+                    onFrame(lines)
+                    scanned++
+                }
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                Log.e("CameraOcr", "Could not scan gallery photo", exception)
+            }
+        }
+        return scanned
+    } finally {
+        recognizer.close()
+    }
+}
+
+private suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { continuation ->
+    addOnCompleteListener { task ->
+        if (task.isSuccessful) continuation.resume(task.result)
+        else continuation.resumeWithException(task.exception ?: IllegalStateException("Task failed"))
     }
 }
 

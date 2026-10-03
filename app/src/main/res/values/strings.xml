@@ -24,6 +24,8 @@
     <string name="photo_scanned">Photo scanned</string>
     <string name="photo_no_text">No text found. Try another photo.</string>
     <string name="photo_scan_failed">Could not scan photo. Try again.</string>
+    <string name="pick_photos">Scan photos from gallery</string>
+    <string name="gallery_scanned">Scanned %1$d of %2$d photos</string>
     <string name="gemini">Gemini</string>
     <string name="open_gemini">Open Gemini</string>
     <string name="share_nutrition_photo">Share nutrition photo</string>
