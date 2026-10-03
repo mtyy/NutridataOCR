@@ -4,6 +4,17 @@
     const rounded = value => Math.round((value + Number.EPSILON) * 1000) / 1000;
     const numeric = value => value === null || value === undefined || value === "" ? 0 : Number(String(value).replace(",", "."));
     const ensure = (condition, message) => { if (!condition) throw new Error(message); };
+    // Angular 14+ stores only a view id in __ngContext__; capture its private id -> view map when a view registers.
+    if (!root.__nutridataViewHook) {
+        root.__nutridataViewHook = true;
+        const set = Map.prototype.set;
+        Map.prototype.set = function (key, value) {
+            if (!root.__nutridataViews && typeof key === "number" && Array.isArray(value) && value[19] === key) {
+                root.__nutridataViews = this;
+            }
+            return set.call(this, key, value);
+        };
+    }
 
     function reconcile(rows, confirmed) {
         const byId = new Map(rows.map(row => [row.id, row]));
@@ -81,12 +92,13 @@
         const modals = document.querySelectorAll("app-foodstuff-modal");
         ensure(modals.length === 1, "Open a new food draft and choose a similar base food before scanning.");
         const modal = modals[0];
-        const editor = Array.isArray(modal.__ngContext__) && modal.__ngContext__.find(value =>
+        const context = modal.__ngContext__;
+        const view = Array.isArray(context) ? context : root.__nutridataViews?.get(context);
+        const editor = Array.isArray(view) && view.find(value =>
             value && typeof value.changeInput === "function" && typeof value.startCalculation === "function" &&
             typeof value.validateComponents === "function");
-        ensure(editor && ["add", "copy"].includes(editor.behaviour) && Array.isArray(editor.components) &&
-            Array.isArray(editor.temp) && editor.recipeComponents?.length > 0,
-            "Only new food drafts based on a similar food can be filled.");
+        ensure(editor && Array.isArray(editor.components) && Array.isArray(editor.temp),
+            "Could not reach the food editor. Close and reopen the food dialog, then try again.");
         ensure(editor.components.length >= 40 && editor.components.length <= 200 &&
             new Set(editor.components.map(row => row.id)).size === editor.components.length,
             "The website nutrient table has changed.");
@@ -103,22 +115,11 @@
         return { modal, editor, inputs };
     }
 
-    function fingerprint(editor) {
-        return JSON.stringify([editor.behaviour, editor.recipeRevId, editor.foodstuffForm.value,
-            editor.components.map(row => [row.id, row.amount, row.methodId])]);
-    }
-
     function run(command, token, payload) {
         try {
-            const { modal, editor, inputs } = editorContext();
-            if (command === "capture") {
-                root.__nutridataScanDraft = { token, modal, editor, fingerprint: fingerprint(editor) };
-                return { ok: true };
-            }
-            const session = root.__nutridataScanDraft;
-            ensure(command === "apply" && session && session.token === token && session.modal === modal &&
-                session.editor === editor && session.fingerprint === fingerprint(editor),
-                "The food draft changed or reloaded. Scan again from the intended new food draft.");
+            const { editor, inputs } = editorContext();
+            if (command === "capture") return { ok: true };
+            ensure(command === "apply", "Unknown command.");
             const plan = reconcile(editor.components, payload.amounts);
             const saved = editor.components.map(row => ({ row, amount: row.amount, originalAmount: row.originalAmount,
                 methodId: row.methodId, touched: row.touched, class: row.class }));
@@ -158,7 +159,6 @@
                 });
                 inputs.forEach(({ id, input }) => ensure(Math.abs(numeric(input.value) - payload.amounts[id]) < 0.000001,
                     "A visible label field did not update."));
-                root.__nutridataScanDraft = null;
                 return { ok: true, changes: changes.map(state => ({ name: state.row.name, unit: state.row.unit,
                     before: state.amount, after: state.row.amount })), kcal: editor.energyCalculated };
             } catch (error) {

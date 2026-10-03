@@ -175,9 +175,8 @@ class MainActivity : ComponentActivity() {
     private fun scanFood() {
         val token = UUID.randomUUID().toString()
         runDraftCommand("capture", token) { response ->
-            val intent = Intent(this, OcrActivity::class.java)
-            if (response.optBoolean("ok")) intent.putExtra(DRAFT_TOKEN_EXTRA, token)
-            else Toast.makeText(this, response.optString("error"), Toast.LENGTH_LONG).show()
+            val intent = Intent(this, OcrActivity::class.java).putExtra(DRAFT_TOKEN_EXTRA, token)
+            if (!response.optBoolean("ok")) Toast.makeText(this, response.optString("error"), Toast.LENGTH_LONG).show()
             scanner.launch(intent)
         }
     }
@@ -239,6 +238,7 @@ class MainActivity : ComponentActivity() {
             override fun onPageFinished(view: WebView, url: String?) {
                 canGoBack = view.canGoBack()
                 view.evaluateJavascript(searchScript, null)
+                view.evaluateJavascript(draftScript, null)
             }
 
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
